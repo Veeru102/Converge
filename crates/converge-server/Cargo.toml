@@ -1,0 +1,35 @@
+[package]
+name = "converge-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Converge collaboration server: WebSocket sessions, document actors, persistence"
+
+[[bin]]
+name = "converge-server"
+path = "src/main.rs"
+
+[dependencies]
+converge-core = { path = "../converge-core" }
+converge-proto = { path = "../converge-proto" }
+converge-hub = { path = "../converge-hub" }
+converge-storage = { path = "../converge-storage" }
+axum = { version = "0.7", features = ["ws", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+futures = "0.3"
+serde = { workspace = true }
+serde_json.workspace = true
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.16", default-features = false }
+rand.workspace = true
+rand_chacha.workspace = true
+uuid = { version = "1", features = ["v7"] }
+anyhow = "1"
+dashmap = "6"
+
+[dev-dependencies]
+tokio-tungstenite = "0.24"
+converge-client-sync = { path = "../converge-client-sync" }
