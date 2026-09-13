@@ -232,3 +232,23 @@ Add one risk-mitigation test asset (test infra, not product scope): the Rust sim
 - `cargo run -p converge-sim -- --scenario all --seeds 200` green; any failure reproducible with `--seed`.
 - `pnpm -F @converge/engine -F @converge/sync test` green: fixtures, T2.1–T2.9, sim-trace replays.
 - Manual: two browsers + `/admin/chaos` profile `drop=0.2,dup=0.1,latency=200±150`; kill server mid-drag; `window.__converge.hash()` equals `GET /docs/:id/hash` on both after reconnect.
+
+---
+
+## 7. Findings from the simulator (implementation log)
+
+Each of these was surfaced by a failing seed in `crates/converge-sim` and is
+now covered by the scenario band (`cargo test -p converge-sim`, widen with
+`SIM_SEEDS=200`). Reproduce any run with
+`cargo run -p converge-sim -- --scenario <name> --seed <n> --dump trace`.
+
+| # | Finding | Fix | Invariant |
+|---|---------|-----|-----------|
+| F1 | Re-stamped ops carry *lower* stamps than the skewed originals, so re-applying them over the local document is a LWW no-op; the client kept the skewed stamps and diverged from the server. | A needed re-timestamp forces a snapshot catch-up and rebuilds `doc = snapshot ∪ pending` (the P7 path). | H2, H4 |
+| F2 | Re-stamped ops were rewritten in memory only; after a client crash the store restored the *original* stamp and resent it — two HLCs for one OpId. | Re-stamped ops go back through `Persist` and are not transmitted until the store confirms the rewrite. | H2, D1 |
+| F3 | Under in-connection reordering, op *k+1* can be accepted before op *k* is skew-rejected, breaking the client's "everything from k on is unaccepted" assumption. | The hub rejects *k* permanently (`Rejected` → resync) when a later counter from that replica is already accepted; a `ClockSkew` NACK therefore always implies H3. | H3 |
+| F4 | A duplicated `Hello` produced a second `Welcome` built from a stale `last_seq`. | `Hello` on an already-open session is ignored; `Welcome` outside `HelloSent` is ignored. | P5 |
+| F5 | A transport that drops a message without closing (or a lost `Welcome`) left the client waiting forever. | `hello_timeout` and `ack_timeout` on the client trigger the reconnect/resume path. | I6 |
+| F6 | Timeouts measured on the wall clock misfire across clock steps (a −20 min step made a 3 s timeout take 20 min). | Client time is `Now { wall_ms, mono_ms }`: HLC from `wall`, timers from `mono` (`performance.now()` in the browser). | I6 |
+| F7 | Server-side close must not outrun buffered frames: closing the connection immediately dropped the `Nack`/`Bye` that told the client *why*, causing an endless reconnect loop. Protocol-level: the server always sends `Nack`+`Bye` before closing, and clients must read them. | (Simulator model fix; documented as a server requirement.) | H3 |
+| F8 | A static clock skew never reaches the server: the client corrects its offset at the first `Welcome`. Only *mid-session clock jumps* exercise the server-side skew path. | Added `clock_jumps` to the fault model. | H3 |
