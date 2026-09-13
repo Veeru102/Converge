@@ -17,7 +17,7 @@ import { NetworkLab } from "./NetworkLab.js";
 import { ShortcutSheet } from "./ShortcutSheet.js";
 import { Icons } from "./icons.js";
 
-export function Shell({ session, bench }: { session: Session; bench?: (client: Session["client"]) => React.ReactNode }) {
+export function Shell({ session }: { session: Session }) {
   const { client, docId } = session;
   const { version, status, presence, objects } = useClient(client);
   const [tool, setTool] = useState<Tool>("select");
@@ -124,7 +124,7 @@ export function Shell({ session, bench }: { session: Session; bench?: (client: S
         {!propsOpen && selected.length > 0 && !labOpen && (
           <button className="btn" style={{ position: "absolute", right: 12, top: 12 }} onClick={() => setPropsOpen(true)}>Properties</button>
         )}
-        {labOpen && <NetworkLab client={client} view={view} onClose={() => setLabOpen(false)} bench={bench?.(client)} />}
+        {labOpen && <NetworkLab client={client} view={view} onClose={() => setLabOpen(false)} />}
         {sheet && <ShortcutSheet onClose={() => setSheet(false)} />}
       </div>
     </div>

@@ -9,3 +9,4 @@ test-results/
 playwright-report/
 web/apps/canvas/test-results/
 web/apps/canvas/playwright-report/
+web/apps/canvas/bench/results/

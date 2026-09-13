@@ -3,7 +3,7 @@
  * timers. All engine interaction runs through one async queue so that store
  * awaits never interleave with message handling (D6/P6).
  */
-import { Document, hex, type Op, type OpKind, type ReplicaId } from "@converge/engine";
+import { Document, hex, type Op, type OpId, type OpKind, type ReplicaId } from "@converge/engine";
 import type { PresenceEntry, PresenceState, ServerMsg, UserInfo } from "@converge/protocol";
 import { DEFAULT_SYNC_CONFIG, SyncEngine, type ConnState, type Now, type Output, type SyncConfig } from "./engine.js";
 import type { ReplicaSlot, Store } from "./store.js";
@@ -62,6 +62,15 @@ export function randomReplicaId(): ReplicaId {
 
 type Listener<T> = (v: T) => void;
 
+/** Timing events for instrumentation; `at` is `performance.now()`. Purely observational. */
+export type ClientEvent =
+  | { type: "submit"; opIds: OpId[]; at: number }
+  | { type: "commit"; opId: OpId; seq: bigint; own: boolean; at: number }
+  | { type: "ack"; opId: OpId; at: number }
+  | { type: "welcome"; at: number; unacked: number }
+  | { type: "state"; from: ConnState; to: ConnState; at: number }
+  | { type: "status"; status: ClientStatus; at: number };
+
 export class Client {
   private engine!: SyncEngine;
   private slot!: ReplicaSlot;
@@ -82,6 +91,8 @@ export class Client {
   private readonly cfg: SyncConfig;
   private readonly presenceTable = new Map<string, PresenceEntry>();
   private changeListeners: Listener<Document>[] = [];
+  private eventListeners: Listener<ClientEvent>[] = [];
+  private lastState: ConnState = "disconnected";
   private statusListeners: Listener<ClientStatus>[] = [];
   private presenceListeners: Listener<PresenceEntry[]>[] = [];
   private readonly setTimer: (fn: () => void, ms?: number) => ReturnType<typeof setTimeout>;
@@ -152,6 +163,13 @@ export class Client {
       pending: this.engine.pendingCount, unacked: this.engine.unackedCount(), unsaved: this.unsaved,
       offline: this.offline, retryAt: this.retryAt,
     };
+  }
+  onEvent(l: Listener<ClientEvent>): () => void {
+    this.eventListeners.push(l);
+    return () => (this.eventListeners = this.eventListeners.filter((x) => x !== l));
+  }
+  private event(e: ClientEvent): void {
+    for (const l of this.eventListeners) l(e);
   }
   onChange(l: Listener<Document>): () => void {
     this.changeListeners.push(l);
@@ -304,6 +322,13 @@ export class Client {
     switch (msg.type) {
       case "welcome":
         this.backoffAttempt = 0;
+        if (this.eventListeners.length) {
+          const at = performance.now();
+          if (msg.catchUp.kind === "ops") {
+            for (const { seq, op } of msg.catchUp.ops) this.event({ type: "commit", opId: op.id, seq, own: op.id.replica === this.engine.replica, at });
+          }
+          this.event({ type: "welcome", at, unacked: this.engine.unackedCount() });
+        }
         this.presenceTable.clear();
         for (const e of msg.presence) this.presenceTable.set(e.replica.toString(), e);
         this.emitPresence();
@@ -311,7 +336,11 @@ export class Client {
         break;
       case "commit":
         this.opsSinceSnapshot++;
+        if (this.eventListeners.length) this.event({ type: "commit", opId: msg.op.id, seq: msg.seq, own: msg.op.id.replica === this.engine.replica, at: performance.now() });
         this.emitChange();
+        break;
+      case "ack":
+        if (this.eventListeners.length) this.event({ type: "ack", opId: msg.opId, at: performance.now() });
         break;
       case "presence_update":
         this.presenceTable.set(msg.entry.replica.toString(), msg.entry);
@@ -335,6 +364,7 @@ export class Client {
       switch (o.type) {
         case "send":
           this.log(`send ${o.msg.type}${o.msg.type === "submit" ? ` x${o.msg.ops.length}` : ""} conn=${!!this.conn}`);
+          if (o.msg.type === "submit" && this.eventListeners.length) this.event({ type: "submit", opIds: o.msg.ops.map((op) => op.id), at: performance.now() });
           this.conn?.send(o.msg);
           break;
         case "persist": {
@@ -431,6 +461,12 @@ export class Client {
   private emitStatus(): void {
     if (!this.engine) return;
     const s = this.status();
+    if (this.eventListeners.length) {
+      const at = performance.now();
+      if (s.state !== this.lastState) this.event({ type: "state", from: this.lastState, to: s.state, at });
+      this.event({ type: "status", status: s, at });
+    }
+    this.lastState = s.state;
     for (const l of this.statusListeners) l(s);
   }
   private emitPresence(): void {

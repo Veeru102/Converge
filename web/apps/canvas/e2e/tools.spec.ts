@@ -114,5 +114,12 @@ test("network lab: presets drive server chaos, offline toggle queues ops, badge 
   await expect(a.page.getByTestId("converged-badge")).toContainText("Converged");
   await expect(a.page.getByTestId("hash-match")).toHaveText("match");
   await expectConverged([a.page], baseURL!, doc);
+  // In-app benchmark: a burst of 200 ops commits and reports latency samples.
+  await a.page.getByTestId("bench-burst").click();
+  await expect(a.page.getByTestId("bench-result")).toContainText("200 ops committed", { timeout: 30_000 });
+  await expect(a.page.getByTestId("bench-latency")).not.toContainText("—");
+  await a.page.getByTestId("bench-offline-burst").click();
+  await expect(a.page.getByTestId("bench-result")).toContainText("queued offline and committed", { timeout: 30_000 });
+  await expectConverged([a.page], baseURL!, doc);
   await a.context.close();
 });

@@ -46,6 +46,44 @@ Useful endpoints: `GET /docs/:id/hash` (durable state hash — the convergence
 oracle), `PUT /admin/chaos` (`{"enabled":true,"latency_ms":[5,120],"drop_p":0.1,"dup_p":0.1,"disconnect_every":20}`),
 `GET /metrics`.
 
+## The app
+
+Rectangles, ellipses, arrows and text; drag, resize, duplicate, z-order,
+multi-select, zoom/pan, inline text editing, keyboard shortcuts (`?`). Every
+edit is an ordinary LWW op; the UI has no private state that the server does
+not see. Remote cursors and selections are drawn in each user's colour.
+
+The **Network Lab** (flask icon, or `⌘.`) is the demo surface: it shows local
+vs. server hash and durable seq with a *Converged* badge, a queue sparkline,
+a simulated-offline switch, server chaos presets (Clean / Flaky Wi-Fi / Bad
+mobile / Hostile) with latency, drop, duplicate and forced-disconnect controls,
+and live benchmarks.
+
+## Benchmarks
+
+Live numbers come from `Client.onEvent` fed into `BenchStats`
+(`web/packages/sync/src/bench.ts`): commit latency (submit → own commit,
+including ops confirmed through a catch-up after reconnect), reconnect time,
+queue drain time and ops/s. The Lab has two scripted runs (a 200-op burst and
+an offline burst + reconnect).
+
+`pnpm bench` (in `web/apps/canvas`) runs N headless clients against a server:
+
+```sh
+pnpm bench --url http://127.0.0.1:8080 --clients 10 --ops 200 [--chaos clean|flaky|hostile] [--json bench/results/run.json]
+```
+
+Numbers from a MacBook Pro, in-memory storage, all clients converged:
+
+| run | commit latency p50 / p95 | throughput | reconnects | drain to converged |
+|-----|--------------------------|------------|------------|--------------------|
+| 10 clients × 200 ops, clean | 8 / 16 ms | ~600 ops/s | 0 | 3.3 s |
+| 10 clients × 200 ops, hostile (30 % drop, 30 % dup, 50–400 ms, disconnect every 15 msgs) | 6.1 / 50 s | ~35 ops/s | 52 (p50 555 ms) | 60 s |
+
+The hostile row is the point: with a third of all frames dropped or duplicated
+and every session cut every 15 messages, all ten replicas still end on the
+server's exact hash.
+
 ## Tests
 
 ```sh

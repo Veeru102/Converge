@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Client } from "@converge/sync";
 import type { SyncView } from "../hooks/useSyncStatus.js";
 import { Icons } from "./icons.js";
+import { BenchPanel } from "./BenchPanel.js";
 
 export interface ChaosConfig {
   enabled: boolean;
@@ -38,11 +39,10 @@ interface Props {
   client: Client;
   view: SyncView;
   onClose: () => void;
-  bench?: React.ReactNode;
 }
 
 /** Everything needed to break the network on purpose and watch the document heal. */
-export function NetworkLab({ client, view, onClose, bench }: Props) {
+export function NetworkLab({ client, view, onClose }: Props) {
   const [chaos, setChaos] = useState<ChaosConfig>(CLEAN);
   const [history, setHistory] = useState<number[]>(() => Array(60).fill(0));
   const latest = useRef(view.status);
@@ -132,7 +132,7 @@ export function NetworkLab({ client, view, onClose, bench }: Props) {
           <span className="faint">Applied server-side to every session, seeded and deterministic per session.</span>
         </section>
 
-        {bench}
+        <BenchPanel client={client} />
       </div>
     </div>
   );
