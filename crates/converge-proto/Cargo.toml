@@ -9,6 +9,12 @@ description = "Converge wire protocol message types"
 converge-core = { path = "../converge-core" }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+prost = "0.13"
+thiserror.workspace = true
+
+[build-dependencies]
+prost-build = "0.13"
+protoc-bin-vendored = "3"
 
 [features]
 default = ["serde", "json"]

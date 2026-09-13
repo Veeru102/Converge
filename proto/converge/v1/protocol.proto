@@ -1,0 +1,174 @@
+// Converge wire protocol. Logical semantics: crates/converge-proto and
+// web/packages/protocol. Snapshot payloads are the engine's canonical
+// encoding (see converge-core::codec), carried here as opaque bytes.
+syntax = "proto3";
+
+package converge.v1;
+
+message OpId {
+  fixed64 replica = 1;
+  uint64 counter = 2;
+}
+
+message Hlc {
+  uint64 wall_ms = 1;
+  uint32 logical = 2; // u16
+}
+
+message Null {}
+
+message Value {
+  oneof kind {
+    Null null = 1;
+    bool bool = 2;
+    sint64 i64 = 3;
+    double f64 = 4;
+    string str = 5;
+    fixed32 color = 6;
+    string frac_index = 7;
+    OpId obj_ref = 8;
+  }
+}
+
+message Entry {
+  string key = 1;
+  Value value = 2;
+}
+
+enum ObjectKind {
+  OBJECT_KIND_UNSPECIFIED = 0;
+  OBJECT_KIND_RECT = 1;
+  OBJECT_KIND_TEXT = 2;
+  OBJECT_KIND_GROUP = 3;
+  OBJECT_KIND_CONNECTOR = 4;
+}
+
+message Create {
+  ObjectKind kind = 1;
+  repeated Entry props = 2;
+}
+message SetProps {
+  OpId object = 1;
+  repeated Entry entries = 2;
+}
+message Delete { OpId object = 1; }
+message Restore { OpId object = 1; }
+
+message Op {
+  OpId id = 1;
+  Hlc hlc = 2;
+  oneof kind {
+    Create create = 10;
+    SetProps set_props = 11;
+    Delete delete = 12;
+    Restore restore = 13;
+    // 14..19 reserved for SetParent, TextSplice, Rebalance.
+  }
+}
+
+message UserInfo {
+  string name = 1;
+  fixed32 color = 2;
+}
+
+message Hello {
+  uint32 version = 1;
+  string doc = 2;
+  fixed64 replica = 3;
+  uint64 last_seq = 4;
+  bool want_snapshot = 5;
+  UserInfo user = 6;
+}
+
+message PresenceState {
+  bool has_cursor = 1;
+  double cursor_x = 2;
+  double cursor_y = 3;
+  repeated OpId selection = 4;
+}
+
+message PresenceEntry {
+  fixed64 replica = 1;
+  UserInfo user = 2;
+  PresenceState state = 3;
+}
+
+message Submit { repeated Op ops = 1; }
+message Pong { uint64 nonce = 1; }
+
+message ClientMsg {
+  oneof msg {
+    Hello hello = 1;
+    Submit submit = 2;
+    PresenceState presence = 3;
+    Pong pong = 4;
+  }
+}
+
+message CommittedOp {
+  uint64 seq = 1;
+  Op op = 2;
+}
+message CatchUpOps { repeated CommittedOp ops = 1; }
+message Snapshot {
+  bytes bytes = 1;
+  uint64 seq = 2;
+}
+
+message Welcome {
+  uint64 session = 1;
+  uint64 server_time_ms = 2;
+  uint64 durable_head_seq = 3;
+  oneof catch_up {
+    CatchUpOps ops = 4;
+    Snapshot snapshot = 5;
+  }
+  repeated PresenceEntry presence = 6;
+}
+
+enum ByeReason {
+  BYE_REASON_UNSPECIFIED = 0;
+  BYE_REASON_VERSION_MISMATCH = 1;
+  BYE_REASON_UNKNOWN_DOC = 2;
+  BYE_REASON_SUPERSEDED = 3;
+  BYE_REASON_CLOCK_SKEW = 4;
+  BYE_REASON_SLOW_CONSUMER = 5;
+  BYE_REASON_RESTART = 6;
+  BYE_REASON_PROTOCOL_ERROR = 7;
+}
+
+enum NackReason {
+  NACK_REASON_UNSPECIFIED = 0;
+  NACK_REASON_CLOCK_SKEW = 1;
+  NACK_REASON_MALFORMED = 2;
+  NACK_REASON_REJECTED = 3;
+}
+
+message Bye { ByeReason reason = 1; }
+message Commit {
+  uint64 seq = 1;
+  Op op = 2;
+}
+message Ack {
+  OpId op_id = 1;
+  optional uint64 seq = 2;
+}
+message Nack {
+  OpId op_id = 1;
+  NackReason reason = 2;
+}
+message PresenceLeave { fixed64 replica = 1; }
+message Ping { uint64 nonce = 1; }
+
+message ServerMsg {
+  oneof msg {
+    Welcome welcome = 1;
+    Bye bye = 2;
+    Commit commit = 3;
+    Ack ack = 4;
+    Nack nack = 5;
+    PresenceEntry presence_update = 6;
+    PresenceLeave presence_leave = 7;
+    Ping ping = 8;
+  }
+}

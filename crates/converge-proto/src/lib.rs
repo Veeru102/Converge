@@ -8,6 +8,7 @@
 
 #[cfg(feature = "json")]
 pub mod json;
+pub mod wire;
 
 use converge_core::{Hlc, ObjectId, Op, OpId, ReplicaId};
 
