@@ -17,13 +17,16 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use converge_client_sync::{
     ClientConfig, ClientSync, ConnState, Now, Output, ReplicaRow, SnapshotWrite,
 };
+use converge_core::json as cj;
 use converge_core::{
     codec, fracindex, Document, Hlc, ObjectKind, Op, OpId, OpKind, ReplicaId, Value,
 };
 use converge_hub::{Effect, Hub, HubConfig};
+use converge_proto::json as pj;
 use converge_proto::{CatchUp, ClientMsg, DocId, PresenceState, ServerMsg, SessionId, UserInfo};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use serde_json::{json, Value as J};
 
 pub use faults::{FaultPlan, Range};
 pub use scenario::{Scenario, SCENARIOS};
@@ -165,6 +168,8 @@ struct SimClient {
     open_attempt: u64,
     /// Deadline a `ClientTick` is currently scheduled for.
     armed: Option<u64>,
+    /// Per-step record of every `ClientSync` call (for TS replay).
+    trace: Option<Vec<J>>,
 }
 
 /// Server durable storage (Postgres stand-in).
@@ -289,6 +294,7 @@ impl Sim {
                 durable_ops: BTreeSet::new(),
                 open_attempt: 0,
                 armed: None,
+                trace: None,
             });
         }
         let steps_left = scenario.steps;
@@ -327,6 +333,73 @@ impl Sim {
 
     pub fn enable_trace(&mut self) {
         self.trace_enabled = true;
+    }
+
+    /// Record every `ClientSync` interaction so the TypeScript engine can
+    /// replay it (`fixtures/sync`).
+    pub fn enable_client_traces(&mut self) {
+        for c in &mut self.clients {
+            c.trace = Some(Vec::new());
+        }
+    }
+
+    /// The recorded client traces (one JSON document per client).
+    pub fn client_traces(&self) -> Vec<J> {
+        self.clients
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| {
+                c.trace.as_ref().map(|steps| {
+                    json!({
+                        "scenario": self.scenario.name,
+                        "seed": self.seed,
+                        "client": i,
+                        "doc": DOC,
+                        "replica": c.sync.replica().0.to_string(),
+                        "user": pj::user_to_json(&UserInfo { name: format!("c{i}"), color: i as u32 }),
+                        "config": {
+                            "retimestamp_margin_ms": self.scenario.skew_tolerance_ms / 2,
+                            "hello_timeout_ms": 2_000,
+                            "ack_timeout_ms": 3_000,
+                        },
+                        "steps": steps,
+                        "final_hash": codec::hex(&c.sync.hash()),
+                    })
+                })
+            })
+            .collect()
+    }
+
+    fn now_json(now: Now) -> J {
+        json!({"wall": now.wall_ms.to_string(), "mono": now.mono_ms.to_string()})
+    }
+
+    fn outputs_json(out: &[Output]) -> J {
+        J::Array(
+            out.iter()
+                .map(|o| match o {
+                    Output::Send(m) => json!({"send": pj::client_msg_to_json(m)}),
+                    Output::Persist(op) => json!({"persist": cj::op_to_json(op)}),
+                    Output::Reconnect => json!("reconnect"),
+                })
+                .collect(),
+        )
+    }
+
+    /// Append one step to a client's trace: the input, the outputs and the
+    /// observable state afterwards.
+    fn record(&mut self, client: usize, input: J, out: &[Output]) {
+        let c = &mut self.clients[client];
+        let Some(trace) = c.trace.as_mut() else {
+            return;
+        };
+        trace.push(json!({
+            "in": input,
+            "out": Self::outputs_json(out),
+            "hash": codec::hex(&c.sync.hash()),
+            "last_seq": c.sync.last_seq().to_string(),
+            "pending": c.sync.pending_debug().iter().map(|(n, d, s, a)| json!([n.to_string(), d, s, a])).collect::<Vec<_>>(),
+        }));
     }
 
     fn schedule_initial(&mut self) {
@@ -551,6 +624,11 @@ impl Sim {
                 let now_local = Now::new((self.now as i64 + c.skew_ms).max(0) as u64, self.now);
                 let mut out = Vec::new();
                 c.sync.tick(now_local, &mut out);
+                self.record(
+                    client,
+                    json!({"kind": "tick", "now": Self::now_json(now_local)}),
+                    &out,
+                );
                 if !out.is_empty() {
                     self.stats.timeouts += 1;
                     self.log(|| format!("client {client} timed out waiting for the server"));
@@ -661,9 +739,11 @@ impl Sim {
                 self.check_server_msg(client, &m);
                 let now_local = self.local_now(client);
                 let mut out = Vec::new();
+                let msg_json = pj::server_msg_to_json(&m);
                 self.clients[client]
                     .sync
                     .message(gen, m, now_local, &mut out);
+                self.record(client, json!({"kind": "message", "gen": gen.to_string(), "now": Self::now_json(now_local), "msg": msg_json}), &out);
                 self.outputs(client, out);
                 let last = self.clients[client].sync.last_seq();
                 if last > self.storage.durable_seq {
@@ -954,6 +1034,11 @@ impl Sim {
         let mut out = Vec::new();
         let now_local = self.local_now(client);
         let gen = self.clients[client].sync.connected(now_local, &mut out);
+        self.record(
+            client,
+            json!({"kind": "connected", "now": Self::now_json(now_local)}),
+            &out,
+        );
         self.conns.insert(
             id,
             Conn {
@@ -1012,6 +1097,8 @@ impl Sim {
         c.conn = None;
         c.sync.disconnected();
         c.open_attempt += 1;
+        self.record(client, json!({"kind": "disconnected"}), &[]);
+        let c = &mut self.clients[client];
         let attempt = c.open_attempt;
         if c.offline {
             return;
@@ -1095,6 +1182,7 @@ impl Sim {
                 let mut out = Vec::new();
                 let now_local = Now::new((self.now as i64 + c.skew_ms).max(0) as u64, self.now);
                 c.sync.persisted(counter, now_local, &mut out);
+                self.record(client, json!({"kind": "persisted", "counter": counter.to_string(), "now": Self::now_json(now_local)}), &out);
                 self.outputs(client, out);
             }
             StoreWrite::Snapshot(w) => {
@@ -1109,6 +1197,12 @@ impl Sim {
                     }
                     c.store.row.high_water = c.store.row.high_water.max(w.high_water);
                     c.sync.snapshot_persisted(&w.acked);
+                    let acked: Vec<String> = w.acked.iter().map(|a| a.to_string()).collect();
+                    self.record(
+                        client,
+                        json!({"kind": "snapshot_persisted", "acked": acked}),
+                        &[],
+                    );
                 }
             }
         }
@@ -1122,6 +1216,11 @@ impl Sim {
         c.snapshot_scheduled = true;
         c.edits_since_snapshot = 0;
         let w = c.sync.snapshot();
+        self.record(
+            client,
+            json!({"kind": "snapshot", "expect": {"seq": w.seq.to_string(), "high_water": cj::hlc_to_json(&w.high_water), "acked": w.acked.iter().map(|a| a.to_string()).collect::<Vec<_>>(), "snapshot_hash": codec::hex(blake3::hash(&w.bytes).as_bytes())}}),
+            &[],
+        );
         self.store_write(client, StoreWrite::Snapshot(w));
     }
 
@@ -1151,6 +1250,13 @@ impl Sim {
         );
         c.store.last_done = self.now;
         c.next_z = None;
+        let input = json!({
+            "kind": "restore",
+            "row": {"next_counter": store.row.next_counter.to_string(), "high_water": cj::hlc_to_json(&store.row.high_water), "clock_offset_ms": store.row.clock_offset_ms.to_string()},
+            "snapshot": store.snapshot.as_ref().map(|(b, seq)| json!({"bytes": codec::hex(b), "seq": seq.to_string()})),
+            "pending": store.pending.values().map(cj::op_to_json).collect::<Vec<_>>(),
+        });
+        self.record(client, input, &[]);
         // Reconnect happens via client_lost_conn's scheduled Open.
     }
 
@@ -1162,7 +1268,16 @@ impl Sim {
         let now_local = self.local_now(client);
         let kind = self.random_op_kind(client);
         let mut out = Vec::new();
-        let op = self.clients[client].sync.edit(kind, now_local, &mut out);
+        let op = self.clients[client]
+            .sync
+            .edit(kind.clone(), now_local, &mut out);
+        let kind_json = cj::op_to_json(&Op {
+            id: op.id,
+            hlc: op.hlc,
+            kind,
+        })["kind"]
+            .clone();
+        self.record(client, json!({"kind": "edit", "now": Self::now_json(now_local), "op_kind": kind_json, "op": cj::op_to_json(&op)}), &out);
         self.stats.ops_authored += 1;
         self.log(|| format!("client {client} edit {} {:?}", op.id, op.kind));
         self.outputs(client, out);
@@ -1377,6 +1492,20 @@ impl Sim {
     }
     pub fn scenario(&self) -> &Scenario {
         &self.scenario
+    }
+}
+
+/// Run one scenario for one seed and return the per-client traces.
+pub fn run_with_traces(
+    scenario: Scenario,
+    seed: u64,
+) -> Result<(Stats, Vec<J>), (Failure, Vec<String>)> {
+    let mut sim = Sim::new(scenario, seed);
+    sim.enable_trace();
+    sim.enable_client_traces();
+    match sim.run() {
+        Ok(s) => Ok((s, sim.client_traces())),
+        Err(f) => Err((f, sim.trace)),
     }
 }
 

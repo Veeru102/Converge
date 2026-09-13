@@ -500,66 +500,6 @@ fn checked_in_engine_fixtures_match() {
     assert!(count >= 10);
 }
 
-fn u64_from(j: &J) -> u64 {
-    j.as_str().unwrap().parse().unwrap()
-}
-
-fn id_from(j: &J) -> OpId {
-    OpId::new(u64_from(&j["replica"]), u64_from(&j["counter"]))
-}
-
-fn value_from(j: &J) -> Value {
-    match j["t"].as_str().unwrap() {
-        "null" => Value::Null,
-        "bool" => Value::Bool(j["v"].as_bool().unwrap()),
-        "i64" => Value::I64(j["v"].as_str().unwrap().parse().unwrap()),
-        "f64" => Value::F64(j["v"].as_f64().unwrap()),
-        "str" => Value::Str(j["v"].as_str().unwrap().into()),
-        "color" => Value::Color(j["v"].as_u64().unwrap() as u32),
-        "frac" => Value::FracIndex(j["v"].as_str().unwrap().into()),
-        "ref" => Value::ObjRef(id_from(&j["v"])),
-        t => panic!("bad value tag {t}"),
-    }
-}
-
-fn entries_from(j: &J) -> Vec<(String, Value)> {
-    j.as_array()
-        .unwrap()
-        .iter()
-        .map(|e| (e[0].as_str().unwrap().to_string(), value_from(&e[1])))
-        .collect()
-}
-
-pub fn op_from_json(j: &J) -> Op {
-    let k = &j["kind"];
-    let kind = match k["op"].as_str().unwrap() {
-        "create" => OpKind::Create {
-            kind: match k["kind"].as_str().unwrap() {
-                "rect" => ObjectKind::Rect,
-                "text" => ObjectKind::Text,
-                "group" => ObjectKind::Group,
-                _ => ObjectKind::Connector,
-            },
-            props: entries_from(&k["props"]),
-        },
-        "set_props" => OpKind::SetProps {
-            object: id_from(&k["object"]),
-            entries: entries_from(&k["entries"]),
-        },
-        "delete" => OpKind::Delete {
-            object: id_from(&k["object"]),
-        },
-        "restore" => OpKind::Restore {
-            object: id_from(&k["object"]),
-        },
-        o => panic!("bad op {o}"),
-    };
-    Op {
-        id: id_from(&j["id"]),
-        hlc: Hlc::new(
-            u64_from(&j["hlc"]["wall"]),
-            j["hlc"]["logical"].as_u64().unwrap() as u16,
-        ),
-        kind,
-    }
+fn op_from_json(j: &J) -> Op {
+    converge_core::json::op_from_json(j).unwrap()
 }

@@ -1,7 +1,7 @@
-use converge_sim::{run, Scenario, SCENARIOS};
+use converge_sim::{run, run_with_traces, Scenario, SCENARIOS};
 
 fn usage() -> ! {
-    eprintln!("usage: sim [--scenario NAME|all] [--seed N] [--seeds K] [--clients N] [--steps S] [--dump FILE] [--quiet]");
+    eprintln!("usage: sim [--scenario NAME|all] [--seed N] [--seeds K] [--clients N] [--steps S] [--dump FILE] [--trace-dir DIR] [--quiet]");
     eprintln!("scenarios: {}", SCENARIOS.join(", "));
     std::process::exit(2);
 }
@@ -15,6 +15,7 @@ fn main() {
     let mut steps: Option<usize> = None;
     let mut dump: Option<String> = None;
     let mut quiet = false;
+    let mut trace_dir: Option<String> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--scenario" => scenario = args.next().unwrap_or_else(|| usage()),
@@ -34,6 +35,7 @@ fn main() {
             "--steps" => steps = args.next().and_then(|s| s.parse().ok()),
             "--dump" => dump = args.next(),
             "--quiet" => quiet = true,
+            "--trace-dir" => trace_dir = args.next(),
             _ => usage(),
         }
     }
@@ -55,7 +57,20 @@ fn main() {
             sc.steps = s;
         }
         for s in seed..seed + seeds {
-            match run(sc.clone(), s) {
+            let result = if let Some(dir) = &trace_dir {
+                std::fs::create_dir_all(dir).expect("trace dir");
+                run_with_traces(sc.clone(), s).map(|(stats, traces)| {
+                    for (i, t) in traces.iter().enumerate() {
+                        let path = format!("{dir}/{name}.{s}.client{i}.json");
+                        std::fs::write(&path, serde_json::to_string(t).unwrap())
+                            .expect("write trace");
+                    }
+                    stats
+                })
+            } else {
+                run(sc.clone(), s)
+            };
+            match result {
                 Ok(stats) => {
                     if !quiet {
                         println!(

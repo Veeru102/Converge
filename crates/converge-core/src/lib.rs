@@ -11,6 +11,8 @@ pub mod document;
 pub mod fracindex;
 pub mod hlc;
 pub mod ids;
+#[cfg(feature = "json")]
+pub mod json;
 pub mod op;
 pub mod value;
 

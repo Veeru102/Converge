@@ -129,48 +129,9 @@ pub fn shuffled_with_dups(ops: &[Op], rng: &mut ChaCha8Rng) -> Vec<Op> {
     v
 }
 
-// ---- JSON fixtures (u64 as decimal strings so JS can use BigInt) ----
+// ---- JSON fixtures ----
 
-fn value_json(v: &Value) -> J {
-    match v {
-        Value::Null => json!({"t": "null"}),
-        Value::Bool(b) => json!({"t": "bool", "v": b}),
-        Value::I64(i) => json!({"t": "i64", "v": i.to_string()}),
-        Value::F64(f) => json!({"t": "f64", "v": f}),
-        Value::Str(s) => json!({"t": "str", "v": s}),
-        Value::Color(c) => json!({"t": "color", "v": c}),
-        Value::FracIndex(s) => json!({"t": "frac", "v": s}),
-        Value::ObjRef(id) => json!({"t": "ref", "v": id_json(id)}),
-    }
-}
-
-pub fn id_json(id: &OpId) -> J {
-    json!({"replica": id.replica.0.to_string(), "counter": id.counter.to_string()})
-}
-
-fn entries_json(e: &[(String, Value)]) -> J {
-    J::Array(e.iter().map(|(k, v)| json!([k, value_json(v)])).collect())
-}
-
-pub fn op_json(op: &Op) -> J {
-    let kind = match &op.kind {
-        OpKind::Create { kind, props } => json!({
-            "op": "create",
-            "kind": match kind { ObjectKind::Rect => "rect", ObjectKind::Text => "text", ObjectKind::Group => "group", ObjectKind::Connector => "connector" },
-            "props": entries_json(props),
-        }),
-        OpKind::SetProps { object, entries } => {
-            json!({"op": "set_props", "object": id_json(object), "entries": entries_json(entries)})
-        }
-        OpKind::Delete { object } => json!({"op": "delete", "object": id_json(object)}),
-        OpKind::Restore { object } => json!({"op": "restore", "object": id_json(object)}),
-    };
-    json!({
-        "id": id_json(&op.id),
-        "hlc": {"wall": op.hlc.wall_ms.to_string(), "logical": op.hlc.logical},
-        "kind": kind,
-    })
-}
+pub use converge_core::json::{id_to_json as id_json, op_to_json as op_json};
 
 pub fn fixture_json(name: &str, ops: &[Op]) -> J {
     let doc = apply_all(ops);

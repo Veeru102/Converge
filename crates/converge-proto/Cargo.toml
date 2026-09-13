@@ -8,7 +8,9 @@ description = "Converge wire protocol message types"
 [dependencies]
 converge-core = { path = "../converge-core" }
 serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [features]
-default = ["serde"]
+default = ["serde", "json"]
 serde = ["dep:serde", "converge-core/serde"]
+json = ["dep:serde_json", "converge-core/json"]

@@ -8,6 +8,7 @@ description = "Converge document engine: ids, HLC, LWW registers, fractional ind
 [dependencies]
 blake3.workspace = true
 serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
@@ -18,5 +19,6 @@ serde_json.workspace = true
 serde = { workspace = true }
 
 [features]
-default = ["serde"]
+default = ["serde", "json"]
 serde = ["dep:serde"]
+json = ["dep:serde_json"]

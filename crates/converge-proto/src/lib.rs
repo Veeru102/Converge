@@ -6,6 +6,9 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "json")]
+pub mod json;
+
 use converge_core::{Hlc, ObjectId, Op, OpId, ReplicaId};
 
 pub const PROTOCOL_VERSION: u32 = 1;

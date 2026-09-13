@@ -12,6 +12,8 @@ converge-hub = { path = "../converge-hub" }
 converge-client-sync = { path = "../converge-client-sync" }
 rand.workspace = true
 rand_chacha.workspace = true
+serde_json.workspace = true
+blake3.workspace = true
 
 [[bin]]
 name = "sim"
