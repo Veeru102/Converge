@@ -151,11 +151,16 @@ op, so HLCs stay strictly increasing per replica across reloads and NTP steps.
 `now` and rejects an op with `wall_ms > now + 60 s` (`Nack::ClockSkew`). A
 skew NACK also **closes the session** (`Bye{ClockSkew}`), which guarantees
 that no later-counter op from that replica is accepted with its original
-timestamp. On the next `Welcome` the client re-timestamps its *entire*
-pending queue — same `OpId`s, fresh `Hlc`s assigned in counter order using the
-corrected clock — re-applies them locally (a higher timestamp for the same
-value is a visual no-op) and only then flushes. Re-timestamping never happens
-per op mid-stream. Together with connection-scoped delivery (nothing from a
+timestamp. On the next `Welcome` the client re-timestamps the
+*known-unaccepted suffix* of its pending queue (ops from the first skew NACK
+on, plus ops never transmitted) — same `OpId`s, fresh `Hlc`s assigned in
+counter order using the corrected clock — and only then flushes. Because the
+new stamps are *lower* than the skewed originals they cannot be re-applied
+over the local state under LWW; the client instead requests a snapshot
+catch-up and rebuilds `doc = snapshot ∪ pending` (the same path as P7). Ops
+sent earlier and not NACKed may already be on the server, so their stamps
+are never touched. Re-timestamping never happens per op mid-stream. Together
+with connection-scoped delivery (nothing from a
 closed connection is ever processed, on either side) this keeps the invariant
 that an `OpId` has exactly one `Hlc` anywhere in the system. Clients up to 60 s
 ahead are not rejected and win concurrent conflicts for that window; that is

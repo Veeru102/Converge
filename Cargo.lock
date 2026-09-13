@@ -71,6 +71,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "converge-client-sync"
+version = "0.1.0"
+dependencies = [
+ "converge-core",
+ "converge-proto",
+]
+
+[[package]]
 name = "converge-core"
 version = "0.1.0"
 dependencies = [
@@ -81,6 +89,23 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "converge-hub"
+version = "0.1.0"
+dependencies = [
+ "converge-core",
+ "converge-proto",
+ "proptest",
+]
+
+[[package]]
+name = "converge-proto"
+version = "0.1.0"
+dependencies = [
+ "converge-core",
+ "serde",
 ]
 
 [[package]]

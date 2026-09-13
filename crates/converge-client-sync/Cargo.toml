@@ -1,0 +1,10 @@
+[package]
+name = "converge-client-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Sans-I/O reference client sync engine"
+
+[dependencies]
+converge-core = { path = "../converge-core" }
+converge-proto = { path = "../converge-proto" }
