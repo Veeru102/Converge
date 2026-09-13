@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fracindex, idEquals, idKey, valueAsNumber, valueAsString, type Document, type ObjectId, type ObjectState, type Op } from "@converge/engine";
-import type { PresenceEntry } from "@converge/protocol";
+import { fracindex, idEquals, idKey, valueAsColor, valueAsNumber, valueAsString, type Document, type ObjectId, type ObjectState, type Op } from "@converge/engine";
+import type { PresenceEntry, PresenceState } from "@converge/protocol";
 import type { Client, ClientStatus } from "@converge/sync";
 import { startSession, type Session } from "./session.js";
 import { DebugPanel } from "./DebugPanel.js";
 
 const colorHex = (c: number | undefined, fallback: string) => (c === undefined ? fallback : `#${(c & 0xffffff).toString(16).padStart(6, "0")}`);
 
+let sessionPromise: Promise<Session> | null = null;
+
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    startSession().then(setSession, (e) => setError(String(e)));
+    sessionPromise ??= startSession();
+    sessionPromise.then(setSession, (e) => setError(String(e)));
   }, []);
   if (error) return <div style={{ padding: 24 }}>Failed to start: {error}</div>;
   if (!session) return <div style={{ padding: 24 }}>Loading…</div>;
@@ -19,11 +22,11 @@ export function App() {
 }
 
 function useClientState(client: Client) {
-  const [, force] = useState(0);
+  const [version, setVersion] = useState(0);
   const [status, setStatus] = useState<ClientStatus>(() => client.status());
   const [presence, setPresence] = useState<PresenceEntry[]>([]);
   useEffect(() => {
-    const a = client.onChange(() => force((n) => n + 1));
+    const a = client.onChange(() => setVersion((n) => n + 1));
     const b = client.onStatus(setStatus);
     const c = client.onPresence(setPresence);
     return () => {
@@ -32,17 +35,19 @@ function useClientState(client: Client) {
       c();
     };
   }, [client]);
-  return { status, presence };
+  return { version, status, presence };
 }
 
 function Canvas({ session }: { session: Session }) {
   const { client } = session;
-  const { status, presence } = useClientState(client);
-  const [selected, setSelected] = useState<ObjectId | null>(null);
+  const { version, status, presence } = useClientState(client);
+  const [selectedId, setSelected] = useState<ObjectId | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const drag = useRef<{ id: ObjectId; dx: number; dy: number; last: number } | null>(null);
+  const drag = useRef<{ id: ObjectId; dx: number; dy: number; last: number; moved: boolean; sent: [number, number] | null } | null>(null);
+  const presenceTimer = useRef<{ timer: ReturnType<typeof setTimeout> | null; last: number; next: PresenceState | null }>({ timer: null, last: 0, next: null });
   const doc: Document = client.document;
-  const objects = doc.renderOrder();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const objects = useMemo(() => doc.renderOrder(), [doc, version]);
   const topZ = useMemo(() => {
     let z: string | null = null;
     for (const [, o] of objects) {
@@ -51,6 +56,28 @@ function Canvas({ session }: { session: Session }) {
     }
     return z;
   }, [objects]);
+  // B5: a selection only exists while the object is visible.
+  const selected = selectedId && doc.get(selectedId)?.visible() ? selectedId : null;
+
+  // B3: presence at ~20 Hz with a trailing send.
+  const sendPresence = (state: PresenceState) => {
+    const t = presenceTimer.current;
+    const now = performance.now();
+    if (now - t.last >= 50) {
+      t.last = now;
+      client.sendPresence(state);
+      return;
+    }
+    t.next = state;
+    t.timer ??= setTimeout(() => {
+      t.timer = null;
+      if (t.next) {
+        t.last = performance.now();
+        client.sendPresence(t.next);
+        t.next = null;
+      }
+    }, 50 - (now - t.last));
+  };
 
   const nextZ = () => fracindex.between(topZ, null);
 
@@ -93,25 +120,33 @@ function Canvas({ session }: { session: Session }) {
     e.stopPropagation();
     setSelected(id);
     const p = svgPoint(e);
-    drag.current = { id, dx: p.x - (valueAsNumber(o.get("x")) ?? 0), dy: p.y - (valueAsNumber(o.get("y")) ?? 0), last: 0 };
+    drag.current = { id, dx: p.x - (valueAsNumber(o.get("x")) ?? 0), dy: p.y - (valueAsNumber(o.get("y")) ?? 0), last: 0, moved: false, sent: null };
     (e.target as Element).setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const p = svgPoint(e);
-    client.sendPresence({ cursor: [p.x, p.y], selection: selected ? [selected] : [] });
+    sendPresence({ cursor: [p.x, p.y], selection: selected ? [selected] : [] });
     const d = drag.current;
     if (!d) return;
+    d.moved = true;
     const now = performance.now();
     if (now - d.last < 33) return; // ~30 Hz while dragging
     d.last = now;
-    client.edit({ op: "set_props", object: d.id, entries: [["x", { t: "f64", v: p.x - d.dx }], ["y", { t: "f64", v: p.y - d.dy }]] });
+    moveTo(d, p.x - d.dx, p.y - d.dy);
+  };
+  // B2: never emit a move op for a plain click or an unchanged position.
+  const moveTo = (d: NonNullable<typeof drag.current>, x: number, y: number) => {
+    if (d.sent && d.sent[0] === x && d.sent[1] === y) return;
+    d.sent = [x, y];
+    client.edit({ op: "set_props", object: d.id, entries: [["x", { t: "f64", v: x }], ["y", { t: "f64", v: y }]] });
   };
   const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
     drag.current = null;
+    if (!d.moved) return;
     const p = svgPoint(e);
-    client.edit({ op: "set_props", object: d.id, entries: [["x", { t: "f64", v: p.x - d.dx }], ["y", { t: "f64", v: p.y - d.dy }]] });
+    moveTo(d, p.x - d.dx, p.y - d.dy);
   };
 
   const remoteSelections = new Map<string, PresenceEntry[]>();
@@ -172,7 +207,7 @@ function Shape({ id, o, selected, remote, onPointerDown }: { id: ObjectId; o: Ob
     return (
       <g onPointerDown={(e) => onPointerDown(e, id, o)} style={{ cursor: "move" }} data-testid="shape" data-kind="text">
         <rect x={x - 4} y={y - size} width={Math.max(30, text.length * size * 0.6) + 8} height={size * 1.4} fill="transparent" stroke={outline} strokeDasharray={selected ? undefined : "4 2"} />
-        <text x={x} y={y} fontSize={size} fill={colorHex(valueAsNumber(o.get("color")), "#222")}>{text}</text>
+        <text x={x} y={y} fontSize={size} fill={colorHex(valueAsColor(o.get("color")), "#222")}>{text}</text>
       </g>
     );
   }
@@ -180,7 +215,7 @@ function Shape({ id, o, selected, remote, onPointerDown }: { id: ObjectId; o: Ob
   const h = valueAsNumber(o.get("h")) ?? 60;
   return (
     <g onPointerDown={(e) => onPointerDown(e, id, o)} style={{ cursor: "move" }} data-testid="shape" data-kind="rect">
-      <rect x={x} y={y} width={w} height={h} rx={4} fill={colorHex(valueAsNumber(o.get("fill")), "#ccc")} stroke={outline} strokeWidth={2} strokeDasharray={selected ? undefined : "4 2"} />
+      <rect x={x} y={y} width={w} height={h} rx={4} fill={colorHex(valueAsColor(o.get("fill")), "#ccc")} stroke={outline} strokeWidth={2} strokeDasharray={selected ? undefined : "4 2"} />
     </g>
   );
 }

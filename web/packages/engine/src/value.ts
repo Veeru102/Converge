@@ -37,6 +37,15 @@ export function valueAsNumber(v: Value | undefined): number | undefined {
   return undefined;
 }
 
+/** Packed 0xRRGGBB (or 0xAARRGGBB) colour; `undefined` for any other kind. */
+export function valueAsColor(v: Value | undefined): number | undefined {
+  return v?.t === "color" ? v.v : undefined;
+}
+
+export function valueAsBool(v: Value | undefined): boolean | undefined {
+  return v?.t === "bool" ? v.v : undefined;
+}
+
 export function valueAsString(v: Value | undefined): string | undefined {
   if (!v) return undefined;
   if (v.t === "str" || v.t === "frac") return v.v;

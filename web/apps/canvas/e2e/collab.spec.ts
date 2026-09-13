@@ -17,6 +17,13 @@ test("two tabs edit the same document live and converge with the server", async 
   await expect.poll(() => objectCount(b.page)).toBe(5);
   await dragFirstShape(a.page, 120, 60);
   await dragFirstShape(b.page, -40, 90);
+  // Recolor renders locally and on the other tab.
+  const firstRect = (page: typeof a.page) => page.getByTestId("shape").first().locator("rect");
+  const before = await firstRect(a.page).getAttribute("fill");
+  await a.page.getByTestId("shape").first().click();
+  await a.page.getByTestId("recolor").click();
+  await expect(firstRect(a.page)).not.toHaveAttribute("fill", before!);
+  await expect(firstRect(b.page)).toHaveAttribute("fill", (await firstRect(a.page).getAttribute("fill"))!);
   await expectConverged([a.page, b.page], baseURL!, doc);
   // Presence: each tab sees the other user.
   await expect(a.page.getByText("● bob")).toBeVisible();
