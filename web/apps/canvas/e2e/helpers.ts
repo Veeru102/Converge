@@ -15,11 +15,12 @@ declare global {
   }
 }
 
-export async function openTab(browser: Browser, docId: string, name: string): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext();
+export async function openTab(browser: Browser, docId: string, name: string, extra = ""): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   if (process.env.E2E_DEBUG) page.on("console", (m) => console.log(`[${name}] ${m.text()}`));
-  await page.goto(`/?doc=${docId}&name=${name}${process.env.E2E_DEBUG ? "&debug=1" : ""}`);
+  page.on("pageerror", (e) => console.log(`[${name}] pageerror ${e.message}`));
+  await page.goto(`/?doc=${docId}&name=${name}${process.env.E2E_DEBUG ? "&debug=1" : ""}${extra}`);
   await page.waitForFunction(() => !!window.__converge);
   return { context, page };
 }
@@ -55,17 +56,41 @@ export async function expectConverged(pages: Page[], baseURL: string, docId: str
     .toBe("converged");
 }
 
-export async function addRects(page: Page, n: number): Promise<void> {
-  for (let i = 0; i < n; i++) await page.getByTestId("add-rect").click();
+/** Draw `n` rectangles by drag at staggered positions (world == screen at 100 %). */
+export async function addRects(page: Page, n: number, origin: [number, number] = [120, 120]): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    await page.getByTestId("tool-rect").click();
+    const x = origin[0] + (i % 5) * 150, y = origin[1] + Math.floor(i / 5) * 120;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 100, y + 70, { steps: 4 });
+    await page.mouse.up();
+  }
+  await page.keyboard.press("Escape");
+}
+
+export async function drawShape(page: Page, tool: "rect" | "ellipse" | "line", from: [number, number], to: [number, number]): Promise<void> {
+  await page.getByTestId(`tool-${tool}`).click();
+  await page.mouse.move(from[0], from[1]);
+  await page.mouse.down();
+  await page.mouse.move(to[0], to[1], { steps: 6 });
+  await page.mouse.up();
 }
 
 export async function dragFirstShape(page: Page, dx: number, dy: number): Promise<void> {
+  await page.getByTestId("tool-select").click();
   const shape = page.getByTestId("shape").first();
   const box = (await shape.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   for (let i = 1; i <= 8; i++) await page.mouse.move(box.x + box.width / 2 + (dx * i) / 8, box.y + box.height / 2 + (dy * i) / 8);
   await page.mouse.up();
+}
+
+export async function selectFirstShape(page: Page): Promise<void> {
+  await page.getByTestId("tool-select").click();
+  const box = (await page.getByTestId("shape").first().boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
 export async function setChaos(baseURL: string, cfg: Record<string, unknown>): Promise<void> {

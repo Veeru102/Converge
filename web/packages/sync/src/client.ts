@@ -46,6 +46,10 @@ export interface ClientStatus {
   unacked: number;
   /** Ops authored but whose local write has not completed yet. */
   unsaved: number;
+  /** Simulated-offline mode is on (no reconnects will be attempted). */
+  offline: boolean;
+  /** Epoch ms of the next reconnect attempt while backing off; null otherwise. */
+  retryAt: number | null;
 }
 
 export function randomReplicaId(): ReplicaId {
@@ -72,6 +76,7 @@ export class Client {
   private snapshotInFlight = false;
   private unsaved = 0;
   private backoffAttempt = 0;
+  private retryAt: number | null = null;
   private offline = false;
   private readonly clock: Clock;
   private readonly cfg: SyncConfig;
@@ -145,6 +150,7 @@ export class Client {
     return {
       state: this.engine.connState, replica: this.engine.replica, lastSeq: this.engine.lastSeqValue,
       pending: this.engine.pendingCount, unacked: this.engine.unackedCount(), unsaved: this.unsaved,
+      offline: this.offline, retryAt: this.retryAt,
     };
   }
   onChange(l: Listener<Document>): () => void {
@@ -211,10 +217,12 @@ export class Client {
         this.clearTimer(this.reconnectTimer);
         this.reconnectTimer = null;
       }
+      this.retryAt = null;
     } else {
       this.backoffAttempt = 0;
       this.reconnectNow();
     }
+    this.emitStatus();
   }
 
   isOffline(): boolean {
@@ -242,6 +250,7 @@ export class Client {
       return;
     }
     const gen = ++this.gen;
+    this.retryAt = null;
     this.log(`connecting gen=${gen}`);
     const conn = this.opts.transport.connect({
       onOpen: () => this.enqueue(() => {
@@ -278,8 +287,11 @@ export class Client {
     this.backoffAttempt = Math.min(this.backoffAttempt + 1, 10);
     this.log(`lost connection; reconnect in ${Math.round(delay)} ms (attempt ${this.backoffAttempt})`);
     if (this.reconnectTimer) this.clearTimer(this.reconnectTimer);
+    this.retryAt = Date.now() + delay;
+    this.emitStatus();
     this.reconnectTimer = this.setTimer(() => {
       this.reconnectTimer = null;
+      this.retryAt = null;
       this.connect();
     }, delay);
   }
