@@ -426,9 +426,11 @@ Why these orderings:
 
 ```sql
 documents (id uuid pk, title text, created_at, head_seq bigint, snapshot_seq bigint)
-ops       (doc_id uuid, seq bigint, replica_id bigint, counter bigint,
+ops       (doc_id text, seq bigint, replica_id bigint, counter bigint,
            hlc_wall bigint, hlc_logical int, payload bytea, committed_at,
-           primary key (doc_id, seq), unique (doc_id, replica_id, counter))
+           primary key (doc_id, seq), index (doc_id, replica_id, counter))
+           -- no uniqueness on (replica, counter): a byte-identical op may be
+           -- re-accepted after a worker restart (P3); apply is idempotent
 snapshots (doc_id uuid, seq bigint, payload bytea, created_at, primary key (doc_id, seq))
 ```
 
@@ -440,7 +442,8 @@ snapshots (doc_id uuid, seq bigint, payload bytea, created_at, primary key (doc_
   `Ack` are likewise served from `durable_seq`, never `head_seq`. (Config
   flag `ack_mode = durable | eager` for experiments; default `durable`.)
 * **Snapshot**: every 1 000 ops or 60 s of activity the actor serialises the
-  `Document` (engine snapshot encoding — protobuf `Snapshot` message) into
+  `Document` (the engine's canonical byte encoding with a small header — the
+  same bytes that are hashed, carried as opaque `bytes` on the wire) into
   `snapshots` and advances `documents.snapshot_seq`. Snapshots are written
   from a cheap `clone()` of the state on a blocking thread so the actor keeps
   serving.
