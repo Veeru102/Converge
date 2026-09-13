@@ -41,6 +41,8 @@ enum ObjectKind {
   OBJECT_KIND_TEXT = 2;
   OBJECT_KIND_GROUP = 3;
   OBJECT_KIND_CONNECTOR = 4;
+  OBJECT_KIND_ELLIPSE = 5;
+  OBJECT_KIND_LINE = 6;
 }
 
 message Create {

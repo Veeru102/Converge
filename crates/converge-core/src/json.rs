@@ -49,6 +49,8 @@ pub fn kind_name(k: ObjectKind) -> &'static str {
         ObjectKind::Text => "text",
         ObjectKind::Group => "group",
         ObjectKind::Connector => "connector",
+        ObjectKind::Ellipse => "ellipse",
+        ObjectKind::Line => "line",
     }
 }
 
@@ -136,6 +138,8 @@ pub fn kind_from_name(s: &str) -> Option<ObjectKind> {
         "text" => ObjectKind::Text,
         "group" => ObjectKind::Group,
         "connector" => ObjectKind::Connector,
+        "ellipse" => ObjectKind::Ellipse,
+        "line" => ObjectKind::Line,
         _ => return None,
     })
 }

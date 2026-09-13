@@ -45,6 +45,22 @@ fn sample_ops() -> Vec<Op> {
             hlc: Hlc::new(7, 0),
             kind: OpKind::Restore { object: a },
         },
+        Op {
+            id: OpId::new(3, 12),
+            hlc: Hlc::new(8, 0),
+            kind: OpKind::Create {
+                kind: ObjectKind::Ellipse,
+                props: vec![("w".into(), Value::F64(10.0))],
+            },
+        },
+        Op {
+            id: OpId::new(3, 13),
+            hlc: Hlc::new(9, 0),
+            kind: OpKind::Create {
+                kind: ObjectKind::Line,
+                props: vec![("arrow".into(), Value::Bool(true))],
+            },
+        },
     ]
 }
 

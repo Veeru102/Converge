@@ -53,13 +53,15 @@ function entriesToPb(e: ReadonlyArray<readonly [string, Value]>): pb.Entry[] {
 function entriesFromPb(e: pb.Entry[]): Array<readonly [string, Value]> {
   return e.map((en) => [en.key, valueFromPb(en.value)] as const);
 }
-const KIND_TO_PB: Record<EngineKind, pb.ObjectKind> = { rect: pb.ObjectKind.RECT, text: pb.ObjectKind.TEXT, group: pb.ObjectKind.GROUP, connector: pb.ObjectKind.CONNECTOR };
+const KIND_TO_PB: Record<EngineKind, pb.ObjectKind> = { rect: pb.ObjectKind.RECT, text: pb.ObjectKind.TEXT, group: pb.ObjectKind.GROUP, connector: pb.ObjectKind.CONNECTOR, ellipse: pb.ObjectKind.ELLIPSE, line: pb.ObjectKind.LINE };
 function kindFromPb(k: pb.ObjectKind): EngineKind {
   switch (k) {
     case pb.ObjectKind.RECT: return "rect";
     case pb.ObjectKind.TEXT: return "text";
     case pb.ObjectKind.GROUP: return "group";
     case pb.ObjectKind.CONNECTOR: return "connector";
+    case pb.ObjectKind.ELLIPSE: return "ellipse";
+    case pb.ObjectKind.LINE: return "line";
     default: throw new Error("bad object kind");
   }
 }

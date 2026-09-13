@@ -293,6 +293,34 @@ fn named_scenarios() -> Vec<(&'static str, Vec<Op>)> {
         )],
     ));
 
+    // One object of every kind: pins the kind tag bytes across languages.
+    out.push((
+        "all_object_kinds",
+        [
+            ObjectKind::Rect,
+            ObjectKind::Text,
+            ObjectKind::Group,
+            ObjectKind::Connector,
+            ObjectKind::Ellipse,
+            ObjectKind::Line,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, kind)| {
+            op(
+                a,
+                i as u64 + 1,
+                i as u64 + 1,
+                0,
+                OpKind::Create {
+                    kind,
+                    props: vec![("z".into(), Value::FracIndex(format!("a{i}")))],
+                },
+            )
+        })
+        .collect(),
+    ));
+
     // Same op delivered three times plus a stale write.
     out.push((
         "duplicates_and_stale",

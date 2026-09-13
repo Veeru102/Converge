@@ -100,6 +100,8 @@ fn kind_to_pb(k: ObjectKind) -> i32 {
         ObjectKind::Text => pb::ObjectKind::Text as i32,
         ObjectKind::Group => pb::ObjectKind::Group as i32,
         ObjectKind::Connector => pb::ObjectKind::Connector as i32,
+        ObjectKind::Ellipse => pb::ObjectKind::Ellipse as i32,
+        ObjectKind::Line => pb::ObjectKind::Line as i32,
     }
 }
 fn kind_from_pb(v: i32) -> R<ObjectKind> {
@@ -109,6 +111,8 @@ fn kind_from_pb(v: i32) -> R<ObjectKind> {
             pb::ObjectKind::Text => ObjectKind::Text,
             pb::ObjectKind::Group => ObjectKind::Group,
             pb::ObjectKind::Connector => ObjectKind::Connector,
+            pb::ObjectKind::Ellipse => ObjectKind::Ellipse,
+            pb::ObjectKind::Line => ObjectKind::Line,
             pb::ObjectKind::Unspecified => return Err(WireError::BadEnum("object_kind")),
         },
     )

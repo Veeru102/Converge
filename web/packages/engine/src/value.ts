@@ -1,9 +1,9 @@
 import type { ObjectId } from "./ids.js";
 
-export type ObjectKind = "rect" | "text" | "group" | "connector";
+export type ObjectKind = "rect" | "text" | "group" | "connector" | "ellipse" | "line";
 
-export const KIND_TAG: Record<ObjectKind, number> = { rect: 1, text: 2, group: 3, connector: 4 };
-export const TAG_KIND: Record<number, ObjectKind> = { 1: "rect", 2: "text", 3: "group", 4: "connector" };
+export const KIND_TAG: Record<ObjectKind, number> = { rect: 1, text: 2, group: 3, connector: 4, ellipse: 5, line: 6 };
+export const TAG_KIND: Record<number, ObjectKind> = { 1: "rect", 2: "text", 3: "group", 4: "connector", 5: "ellipse", 6: "line" };
 
 export type Value =
   | { readonly t: "null" }

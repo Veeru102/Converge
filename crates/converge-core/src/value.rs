@@ -9,6 +9,8 @@ pub enum ObjectKind {
     Text,
     Group,
     Connector,
+    Ellipse,
+    Line,
 }
 
 impl ObjectKind {
@@ -18,6 +20,8 @@ impl ObjectKind {
             ObjectKind::Text => 2,
             ObjectKind::Group => 3,
             ObjectKind::Connector => 4,
+            ObjectKind::Ellipse => 5,
+            ObjectKind::Line => 6,
         }
     }
 
@@ -27,6 +31,8 @@ impl ObjectKind {
             2 => ObjectKind::Text,
             3 => ObjectKind::Group,
             4 => ObjectKind::Connector,
+            5 => ObjectKind::Ellipse,
+            6 => ObjectKind::Line,
             _ => return None,
         })
     }

@@ -117,14 +117,19 @@ Value = Null | Bool | I64 | F64 | Str | Color(u32) | FracIndex(String) | ObjRef(
 The engine is schema-agnostic: it merges arbitrary `(key, value)` registers.
 The UI defines which keys mean what:
 
-| kind | props (v1) |
-|------|-----------|
-| common | `z: FracIndex` |
-| `rect` | `x y w h: F64`, `fill stroke: Color` |
-| `text` | `x y: F64`, `text: Str`, `size: F64`, `color: Color` |
+| kind (tag) | props (v1) |
+|------------|-----------|
+| common | `z: FracIndex`, `opacity: F64` (0–1, default 1) |
+| `rect` (1), `ellipse` (5) | `x y w h: F64`, `fill stroke: Color`, `stroke_width: F64` |
+| `text` (2) | `x y w: F64`, `text: Str`, `size: F64`, `color: Color` |
+| `line` (6) | `x1 y1 x2 y2: F64`, `stroke: Color`, `stroke_width: F64`, `arrow: Bool` |
+| `group` (3), `connector` (4) | reserved (M6): `parent: ObjRef`, `from/to: ObjRef` |
 
-Later kinds only add props (`parent: ObjRef`, `from/to: ObjRef`) — no engine
-change.
+Kinds are an enum with a one-byte tag in the canonical encoding (pinned by
+`fixtures/engine/all_object_kinds.json`); adding a kind is additive. Props are
+whole-value LWW registers: a concurrent move and resize of one object may mix
+`x` from one user with `w` from another, and concurrent text edits keep the
+last writer's whole string. Both are accepted v1 semantics.
 
 ### 3.2 Hybrid Logical Clock
 
