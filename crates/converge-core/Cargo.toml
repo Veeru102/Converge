@@ -1,0 +1,22 @@
+[package]
+name = "converge-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Converge document engine: ids, HLC, LWW registers, fractional indexing, canonical hash"
+
+[dependencies]
+blake3.workspace = true
+serde = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+serde_json.workspace = true
+serde = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]

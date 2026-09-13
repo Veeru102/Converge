@@ -1,0 +1,7 @@
+{
+  "expected_hash": "71e0a99173564931c0b8acc52d2685a8e39c64dc52e3d02390fdac2a12b155cb",
+  "expected_snapshot": "43564753010000000000000000",
+  "name": "empty",
+  "ops": [],
+  "render_order": []
+}
