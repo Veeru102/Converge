@@ -23,12 +23,13 @@ const CURSORS: Record<Handle, string> = { nw: "nwse-resize", se: "nwse-resize", 
 interface Props {
   selected: ObjectState[];
   scale: number;
+  interactive: boolean;
   onHandleDown: (e: React.PointerEvent, h: Handle) => void;
   onLineEndDown: (e: React.PointerEvent, which: 1 | 2) => void;
 }
 
 /** Accent outline, resize handles for a single object, union box for many. */
-export function SelectionOverlay({ selected, scale, onHandleDown, onLineEndDown }: Props) {
+export function SelectionOverlay({ selected, scale, interactive, onHandleDown, onLineEndDown }: Props) {
   if (selected.length === 0) return null;
   const s = 1 / scale;
   const hs = 8 * s;
@@ -38,7 +39,7 @@ export function SelectionOverlay({ selected, scale, onHandleDown, onLineEndDown 
     if (o.kind === "line") {
       const pts: Array<[1 | 2, number, number]> = [[1, num(o, "x1"), num(o, "y1")], [2, num(o, "x2"), num(o, "y2")]];
       return (
-        <g data-testid="selection">
+        <g data-testid="selection" pointerEvents={interactive ? "auto" : "none"}>
           {pts.map(([which, x, y]) => (
             <circle key={which} cx={x} cy={y} r={hs * 0.7} fill="#fff" stroke={stroke} strokeWidth={1.5 * s} style={{ cursor: "crosshair" }} onPointerDown={(e) => onLineEndDown(e, which)} />
           ))}
@@ -48,7 +49,7 @@ export function SelectionOverlay({ selected, scale, onHandleDown, onLineEndDown 
     const b = bounds(o);
     const handles: Handle[] = o.kind === "text" ? ["e", "w"] : HANDLES;
     return (
-      <g data-testid="selection">
+      <g data-testid="selection" pointerEvents={interactive ? "auto" : "none"}>
         <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="none" stroke={stroke} strokeWidth={1.5 * s} pointerEvents="none" />
         {handles.map((h) => {
           const [x, y] = handlePoint(b, h);

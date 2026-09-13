@@ -6,6 +6,8 @@ offline, and deterministically converge on reconnect. The drawing UI is
 intentionally thin; the engineering is in the sync model and the machinery
 that proves it converges under hostile networks.
 
+![Two users on one document with the Network Lab open](docs/media/canvas.png)
+
 * Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 * Risk plan, invariants and what the simulator found:
   [`docs/IMPLEMENTATION_RISKS.md`](docs/IMPLEMENTATION_RISKS.md)

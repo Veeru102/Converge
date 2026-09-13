@@ -349,7 +349,7 @@ export function CanvasView(p: CanvasProps) {
           <ShapeView key={idKey(id)} id={id} o={o} interactive={tool === "select" && !spaceHeld} editing={editingId !== null && idKey(id) === idKey(editingId)} onPointerDown={onShapeDown} onDoubleClick={onDoubleClick} />
         ))}
         <RemoteSelections presence={presence} doc={doc} scale={scale} />
-        {!editing && <SelectionOverlay selected={selectedEntries.map(([, o]) => o)} scale={scale} onHandleDown={onHandleDown} onLineEndDown={onLineEndDown} />}
+        {!editing && <SelectionOverlay selected={selectedEntries.map(([, o]) => o)} scale={scale} interactive={tool === "select" && !spaceHeld} onHandleDown={onHandleDown} onLineEndDown={onLineEndDown} />}
         {marquee && <rect x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h} fill="var(--accent-soft)" stroke="var(--accent)" strokeWidth={1 / scale} data-testid="marquee" />}
         {editing && editingId && <TextEditor key={idKey(editingId)} o={editing} onInput={onTextInput} onDone={onTextDone} />}
         <RemoteCursors presence={presence} scale={scale} />
