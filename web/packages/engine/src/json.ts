@@ -10,7 +10,7 @@ import type { ObjectKind, Value } from "./value.js";
 export interface IdJson { replica: string; counter: string }
 export interface HlcJson { wall: string; logical: number }
 export type ValueJson =
-  | { t: "null" } | { t: "bool"; v: boolean } | { t: "i64"; v: string } | { t: "f64"; v: number }
+  | { t: "null" } | { t: "bool"; v: boolean } | { t: "i64"; v: string } | { t: "f64"; v: number | "NaN" | "Infinity" | "-Infinity" }
   | { t: "str"; v: string } | { t: "color"; v: number } | { t: "frac"; v: string } | { t: "ref"; v: IdJson };
 export type EntriesJson = Array<[string, ValueJson]>;
 export type OpKindJson =
@@ -36,6 +36,9 @@ export function valueToJson(v: Value): ValueJson {
   switch (v.t) {
     case "i64": return { t: "i64", v: v.v.toString() };
     case "ref": return { t: "ref", v: idToJson(v.v) };
+    case "f64":
+      if (Number.isFinite(v.v)) return { t: "f64", v: v.v };
+      return { t: "f64", v: Number.isNaN(v.v) ? "NaN" : v.v > 0 ? "Infinity" : "-Infinity" };
     default: return v as ValueJson;
   }
 }
@@ -43,6 +46,9 @@ export function valueFromJson(j: ValueJson): Value {
   switch (j.t) {
     case "i64": return { t: "i64", v: BigInt(j.v) };
     case "ref": return { t: "ref", v: idFromJson(j.v) };
+    case "f64":
+      if (typeof j.v === "string") return { t: "f64", v: j.v === "NaN" ? NaN : j.v === "Infinity" ? Infinity : -Infinity };
+      return { t: "f64", v: j.v };
     default: return j;
   }
 }

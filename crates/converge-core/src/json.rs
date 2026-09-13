@@ -23,7 +23,11 @@ pub fn value_to_json(v: &Value) -> J {
         Value::Null => json!({"t": "null"}),
         Value::Bool(b) => json!({"t": "bool", "v": b}),
         Value::I64(i) => json!({"t": "i64", "v": i.to_string()}),
-        Value::F64(f) => json!({"t": "f64", "v": f}),
+        Value::F64(f) if f.is_finite() => json!({"t": "f64", "v": f}),
+        // JSON has no NaN/Infinity; only malformed ops carry them, but traces
+        // must still round-trip exactly.
+        Value::F64(f) if f.is_nan() => json!({"t": "f64", "v": "NaN"}),
+        Value::F64(f) => json!({"t": "f64", "v": if *f > 0.0 { "Infinity" } else { "-Infinity" }}),
         Value::Str(s) => json!({"t": "str", "v": s}),
         Value::Color(c) => json!({"t": "color", "v": c}),
         Value::FracIndex(s) => json!({"t": "frac", "v": s}),
@@ -99,7 +103,12 @@ pub fn value_from_json(j: &J) -> Result<Value, JsonError> {
                 .parse()
                 .map_err(|_| err("i64"))?,
         ),
-        "f64" => Value::F64(j["v"].as_f64().ok_or_else(|| err("f64"))?),
+        "f64" => Value::F64(match &j["v"] {
+            J::String(s) if s == "NaN" => f64::NAN,
+            J::String(s) if s == "Infinity" => f64::INFINITY,
+            J::String(s) if s == "-Infinity" => f64::NEG_INFINITY,
+            v => v.as_f64().ok_or_else(|| err("f64"))?,
+        }),
         "str" => Value::Str(j["v"].as_str().ok_or_else(|| err("str"))?.into()),
         "color" => Value::Color(j["v"].as_u64().ok_or_else(|| err("color"))? as u32),
         "frac" => Value::FracIndex(j["v"].as_str().ok_or_else(|| err("frac"))?.into()),

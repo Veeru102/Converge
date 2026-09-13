@@ -1238,7 +1238,7 @@ impl Sim {
         c.sync = ClientSync::restore(
             DocId(DOC.into()),
             replica,
-            UserInfo::default(),
+            UserInfo { name: format!("c{client}"), color: client as u32 },
             ClientConfig {
                 retimestamp_margin_ms: self.scenario.skew_tolerance_ms / 2,
                 hello_timeout_ms: 2_000,

@@ -401,9 +401,9 @@ Lifecycle:
    transaction first reads the stored `seq` and aborts if the new one is
    lower, so the snapshot `seq` is monotone even with several tabs writing.
 3. **Startup** → acquire a replica slot: try each `replicas` row's Web Lock
-   `converge:<doc>:replica:<id>`; the first one obtained is this tab's
-   identity (its counter and its pending queue continue as-is); otherwise
-   mint a new replica. Then `doc = snapshot ∪ pending`; UI is interactive
+   `converge:<doc>:replica:<id>`, slots with orphaned pending ops first; the
+   first one obtained is this tab's identity (its counter and its pending
+   queue continue as-is); otherwise mint a new replica. Then `doc = snapshot ∪ pending`; UI is interactive
    before any network activity. Then connect and run §5.2.
 4. **Disconnect** → nothing changes for the user except a status pill.
    Reconnect uses exponential backoff (500 ms → 30 s, full jitter).
