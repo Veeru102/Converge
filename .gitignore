@@ -1,0 +1,9 @@
+/target
+**/node_modules
+**/dist
+web/**/coverage
+.DS_Store
+*.log
+/deploy/pgdata
+test-results/
+playwright-report/
