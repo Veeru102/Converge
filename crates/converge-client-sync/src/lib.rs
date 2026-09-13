@@ -18,6 +18,20 @@ use converge_proto::{
     MAX_SUBMIT_OPS, PROTOCOL_VERSION,
 };
 
+/// The driver's clocks. `wall_ms` feeds the HLC and may jump (NTP steps,
+/// manual changes); `mono_ms` is monotonic and drives timeouts.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Now {
+    pub wall_ms: u64,
+    pub mono_ms: u64,
+}
+
+impl Now {
+    pub fn new(wall_ms: u64, mono_ms: u64) -> Self {
+        Now { wall_ms, mono_ms }
+    }
+}
+
 /// What the driver must do.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Output {
@@ -48,6 +62,8 @@ struct Pending {
     /// Committed by the server (Commit or Ack seen). Dropped from the queue
     /// at the next snapshot write (D2).
     acked: bool,
+    /// Monotonic time of the last transmission on the current connection.
+    sent_at: Option<u64>,
 }
 
 /// Everything needed to write the local snapshot record (D2/D3/H6).
@@ -73,12 +89,20 @@ pub struct ClientConfig {
     /// Ops whose timestamp is further ahead of server time than this are
     /// re-timestamped before being (re)sent; half the server tolerance.
     pub retimestamp_margin_ms: u64,
+    /// No `Welcome` within this long after `Hello` ⇒ reconnect.
+    pub hello_timeout_ms: u64,
+    /// A sent op unconfirmed for this long ⇒ the connection is presumed
+    /// dead; reconnect and resume (a live TCP connection never loses a
+    /// message, so this only fires when the transport is broken).
+    pub ack_timeout_ms: u64,
 }
 
 impl Default for ClientConfig {
     fn default() -> Self {
         ClientConfig {
             retimestamp_margin_ms: 30_000,
+            hello_timeout_ms: 5_000,
+            ack_timeout_ms: 10_000,
         }
     }
 }
@@ -103,8 +127,9 @@ pub struct ClientSync {
     /// session; everything from here on is known-unaccepted (H3).
     first_skew_nack: Option<u64>,
     want_snapshot: bool,
-    /// The last snapshot write handed out and not yet confirmed.
+    /// Resend everything unacked on the next flush (after a `Welcome`).
     resync_pending: bool,
+    hello_sent_at: Option<u64>,
 }
 
 impl ClientSync {
@@ -125,6 +150,7 @@ impl ClientSync {
             first_skew_nack: None,
             want_snapshot: false,
             resync_pending: false,
+            hello_sent_at: None,
         }
     }
 
@@ -158,6 +184,7 @@ impl ClientSync {
                     durable: true,
                     sent: true,
                     acked: false,
+                    sent_at: None,
                 },
             );
         }
@@ -194,6 +221,14 @@ impl ClientSync {
     pub fn pending_ops(&self) -> impl Iterator<Item = &Op> {
         self.pending.values().map(|p| &p.op)
     }
+    /// `(counter, durable, sent, acked)` for every pending op — diagnostics.
+    pub fn pending_debug(&self) -> Vec<(u64, bool, bool, bool)> {
+        self.pending
+            .iter()
+            .map(|(c, p)| (*c, p.durable, p.sent, p.acked))
+            .collect()
+    }
+
     pub fn replica_row(&self) -> ReplicaRow {
         ReplicaRow {
             next_counter: self.next_counter,
@@ -209,9 +244,13 @@ impl ClientSync {
 
     /// The transport opened. Returns the generation the driver must tag
     /// inbound messages with.
-    pub fn connected(&mut self, out: &mut Vec<Output>) -> u64 {
+    pub fn connected(&mut self, now: Now, out: &mut Vec<Output>) -> u64 {
         self.gen += 1;
         self.state = ConnState::HelloSent;
+        self.hello_sent_at = Some(now.mono_ms);
+        for p in self.pending.values_mut() {
+            p.sent_at = None;
+        }
         out.push(Output::Send(ClientMsg::Hello(Hello {
             version: PROTOCOL_VERSION,
             doc: self.doc_id.clone(),
@@ -225,20 +264,66 @@ impl ClientSync {
 
     pub fn disconnected(&mut self) {
         self.state = ConnState::Disconnected;
+        self.hello_sent_at = None;
+    }
+
+    /// Periodic timer: detects a lost `Welcome` or lost acks (the transport
+    /// dropped something without closing) and asks for a reconnect.
+    pub fn tick(&mut self, now: Now, out: &mut Vec<Output>) {
+        let now_ms = now.mono_ms;
+        match self.state {
+            ConnState::HelloSent => {
+                if let Some(t) = self.hello_sent_at {
+                    if now_ms.saturating_sub(t) >= self.cfg.hello_timeout_ms {
+                        self.state = ConnState::Disconnected;
+                        out.push(Output::Reconnect);
+                    }
+                }
+            }
+            ConnState::Live => {
+                let stale = self.pending.values().any(|p| {
+                    !p.acked
+                        && p.sent_at
+                            .is_some_and(|t| now_ms.saturating_sub(t) >= self.cfg.ack_timeout_ms)
+                });
+                if stale {
+                    self.state = ConnState::Disconnected;
+                    out.push(Output::Reconnect);
+                }
+            }
+            ConnState::Disconnected => {}
+        }
+    }
+
+    /// When the driver should next call [`ClientSync::tick`], if anything is
+    /// being waited for.
+    pub fn next_deadline(&self) -> Option<u64> {
+        match self.state {
+            ConnState::HelloSent => self.hello_sent_at.map(|t| t + self.cfg.hello_timeout_ms),
+            ConnState::Live => self
+                .pending
+                .values()
+                .filter(|p| !p.acked)
+                .filter_map(|p| p.sent_at)
+                .min()
+                .map(|t| t + self.cfg.ack_timeout_ms),
+            ConnState::Disconnected => None,
+        }
     }
 
     // ----- local edits and store -----
 
     /// Author an op: applied locally at once, persisted before it is sent.
-    pub fn edit(&mut self, kind: OpKind, now_ms: u64, out: &mut Vec<Output>) -> Op {
-        let hlc = self.clock.tick(self.server_now(now_ms));
+    /// The caller validates the op shape (`Op::validate`); an invalid op is
+    /// applied locally, NACKed by the server and undone by a resync (P7).
+    pub fn edit(&mut self, kind: OpKind, now: Now, out: &mut Vec<Output>) -> Op {
+        let hlc = self.clock.tick(self.server_now(now.wall_ms));
         let id = converge_core::OpId {
             replica: self.replica,
             counter: self.next_counter,
         };
         self.next_counter += 1;
         let op = Op { id, hlc, kind };
-        debug_assert!(op.validate().is_ok());
         self.doc.apply(&op);
         self.pending.insert(
             id.counter,
@@ -247,6 +332,7 @@ impl ClientSync {
                 durable: false,
                 sent: false,
                 acked: false,
+                sent_at: None,
             },
         );
         out.push(Output::Persist(op.clone()));
@@ -254,12 +340,12 @@ impl ClientSync {
     }
 
     /// The store confirmed the pending write for `counter`.
-    pub fn persisted(&mut self, counter: u64, out: &mut Vec<Output>) {
+    pub fn persisted(&mut self, counter: u64, now: Now, out: &mut Vec<Output>) {
         if let Some(p) = self.pending.get_mut(&counter) {
             p.durable = true;
         }
         if self.state == ConnState::Live {
-            self.flush(out);
+            self.flush(now.mono_ms, out);
         }
     }
 
@@ -289,7 +375,7 @@ impl ClientSync {
 
     /// Send every durable, unacked op in counter order, stopping at the
     /// first non-durable one (ops are always transmitted in counter order).
-    fn flush(&mut self, out: &mut Vec<Output>) {
+    fn flush(&mut self, mono_ms: u64, out: &mut Vec<Output>) {
         let mut batch: Vec<Op> = Vec::new();
         for p in self.pending.values_mut() {
             if p.acked {
@@ -300,6 +386,7 @@ impl ClientSync {
             }
             if !p.sent || self.resync_pending {
                 p.sent = true;
+                p.sent_at = Some(mono_ms);
                 batch.push(p.op.clone());
             }
             if batch.len() == MAX_SUBMIT_OPS {
@@ -322,18 +409,19 @@ impl ClientSync {
 
     // ----- inbound -----
 
-    pub fn message(&mut self, gen: u64, msg: ServerMsg, now_ms: u64, out: &mut Vec<Output>) {
+    pub fn message(&mut self, gen: u64, msg: ServerMsg, now: Now, out: &mut Vec<Output>) {
         if gen != self.gen || self.state == ConnState::Disconnected {
             return;
         }
         match msg {
+            ServerMsg::Welcome { .. } if self.state != ConnState::HelloSent => {} // duplicate
             ServerMsg::Welcome {
                 server_time_ms,
                 durable_head_seq,
                 catch_up,
                 ..
-            } => self.welcome(server_time_ms, durable_head_seq, catch_up, now_ms, out),
-            ServerMsg::Commit { seq, op } => self.commit(seq, op, now_ms, out),
+            } => self.welcome(server_time_ms, durable_head_seq, catch_up, now, out),
+            ServerMsg::Commit { seq, op } => self.commit(seq, op, now, out),
             ServerMsg::Ack { op_id, .. } => {
                 if op_id.replica == self.replica {
                     if let Some(p) = self.pending.get_mut(&op_id.counter) {
@@ -358,11 +446,11 @@ impl ClientSync {
         server_time_ms: u64,
         durable_head: u64,
         catch_up: CatchUp,
-        now_ms: u64,
+        now: Now,
         out: &mut Vec<Output>,
     ) {
-        self.offset_ms = server_time_ms as i64 - now_ms as i64;
-        let server_now = self.server_now(now_ms);
+        self.offset_ms = server_time_ms as i64 - now.wall_ms as i64;
+        let server_now = self.server_now(now.wall_ms);
         match catch_up {
             CatchUp::Ops(ops) => {
                 for (seq, op) in ops {
@@ -387,7 +475,7 @@ impl ClientSync {
                 let max_stamp = max_hlc(&doc);
                 self.clock.observe(max_stamp, server_now);
                 if self.retimestamp_needed(server_now) {
-                    self.retimestamp(&doc, server_now);
+                    self.retimestamp(&doc, server_now, out);
                 }
                 self.first_skew_nack = None;
                 // Durable state plus our own pending ops (commutative, so exact).
@@ -400,8 +488,9 @@ impl ClientSync {
         }
         self.want_snapshot = false;
         self.state = ConnState::Live;
+        self.hello_sent_at = None;
         self.resync_pending = true; // resend everything unacked
-        self.flush(out);
+        self.flush(now.mono_ms, out);
     }
 
     /// First counter of the known-unaccepted suffix of the pending queue:
@@ -429,7 +518,7 @@ impl ClientSync {
     /// reset to the highest stamp that can still be accepted anywhere (what
     /// the server holds plus our own ops before the suffix) — the one place
     /// where `wall` may go down.
-    fn retimestamp(&mut self, base: &Document, server_now: u64) {
+    fn retimestamp(&mut self, base: &Document, server_now: u64, out: &mut Vec<Output>) {
         let Some(start) = self.retimestamp_start() else {
             return;
         };
@@ -448,6 +537,11 @@ impl ClientSync {
             );
             p.op.hlc = hlc;
             p.sent = false;
+            // The store still holds the old stamp; rewrite it before this op
+            // can be transmitted again (a crash in between must restore the
+            // new stamp, never the old one — H2 across restarts).
+            p.durable = false;
+            out.push(Output::Persist(p.op.clone()));
         }
     }
 
@@ -462,11 +556,11 @@ impl ClientSync {
         self.doc.apply(op);
     }
 
-    fn commit(&mut self, seq: u64, op: Op, now_ms: u64, out: &mut Vec<Output>) {
+    fn commit(&mut self, seq: u64, op: Op, now: Now, out: &mut Vec<Output>) {
         if seq <= self.last_seq {
             return;
         }
-        let server_now = self.server_now(now_ms);
+        let server_now = self.server_now(now.wall_ms);
         self.absorb(&op, server_now);
         if seq == self.last_seq + 1 {
             self.last_seq = seq;

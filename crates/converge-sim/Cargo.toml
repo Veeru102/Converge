@@ -1,0 +1,18 @@
+[package]
+name = "converge-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Deterministic discrete-event simulator for the Converge protocol"
+
+[dependencies]
+converge-core = { path = "../converge-core" }
+converge-proto = { path = "../converge-proto" }
+converge-hub = { path = "../converge-hub" }
+converge-client-sync = { path = "../converge-client-sync" }
+rand.workspace = true
+rand_chacha.workspace = true
+
+[[bin]]
+name = "sim"
+path = "src/main.rs"

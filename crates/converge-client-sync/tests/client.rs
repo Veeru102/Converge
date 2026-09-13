@@ -1,4 +1,4 @@
-use converge_client_sync::{ClientConfig, ClientSync, ConnState, Output};
+use converge_client_sync::{ClientConfig, ClientSync, ConnState, Now, Output};
 use converge_core::*;
 use converge_proto::*;
 
@@ -41,19 +41,38 @@ fn submits(out: &[Output]) -> Vec<&Op> {
         .collect()
 }
 
+/// Complete every `Persist` output (the store confirming the write) and
+/// return the ops subsequently submitted.
+fn complete_persists(c: &mut ClientSync, out: &mut [Output]) -> Vec<Op> {
+    let persists: Vec<u64> = out
+        .iter()
+        .filter_map(|o| match o {
+            Output::Persist(op) => Some(op.id.counter),
+            _ => None,
+        })
+        .collect();
+    let mut sent: Vec<Op> = submits(out).into_iter().cloned().collect();
+    for counter in persists {
+        let mut more = Vec::new();
+        c.persisted(counter, Now::new(1_000, 0), &mut more);
+        sent.extend(submits(&more).into_iter().cloned());
+    }
+    sent
+}
+
 #[test]
 fn ops_are_sent_only_after_local_persistence_and_in_order() {
     let mut c = client(1);
     let mut out = vec![];
-    let g = c.connected(&mut out);
-    c.message(g, welcome(0, vec![]), 1_000, &mut out);
+    let g = c.connected(Now::new(1_000, 0), &mut out);
+    c.message(g, welcome(0, vec![]), Now::new(1_000, 0), &mut out);
     out.clear();
     let a = c.edit(
         OpKind::Create {
             kind: ObjectKind::Rect,
             props: vec![],
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
     let b = c.edit(
@@ -61,7 +80,7 @@ fn ops_are_sent_only_after_local_persistence_and_in_order() {
             object: a.id,
             entries: vec![("x".into(), Value::F64(1.0))],
         },
-        1_001,
+        Now::new(1_001, 0),
         &mut out,
     );
     assert_eq!(
@@ -70,9 +89,9 @@ fn ops_are_sent_only_after_local_persistence_and_in_order() {
     );
     out.clear();
     // Second write completes first: nothing can be sent yet (counter order).
-    c.persisted(b.id.counter, &mut out);
+    c.persisted(b.id.counter, Now::new(1_000, 0), &mut out);
     assert!(submits(&out).is_empty());
-    c.persisted(a.id.counter, &mut out);
+    c.persisted(a.id.counter, Now::new(1_000, 0), &mut out);
     assert_eq!(
         submits(&out)
             .iter()
@@ -87,15 +106,15 @@ fn ops_are_sent_only_after_local_persistence_and_in_order() {
 fn gap_in_commits_keeps_last_seq_and_reconnects() {
     let mut c = client(1);
     let mut out = vec![];
-    let g = c.connected(&mut out);
-    c.message(g, welcome(0, vec![]), 1_000, &mut out);
+    let g = c.connected(Now::new(1_000, 0), &mut out);
+    c.message(g, welcome(0, vec![]), Now::new(1_000, 0), &mut out);
     c.message(
         g,
         ServerMsg::Commit {
             seq: 1,
             op: remote_create(2, 1, 1_000),
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
     c.message(
@@ -104,7 +123,7 @@ fn gap_in_commits_keeps_last_seq_and_reconnects() {
             seq: 2,
             op: remote_create(2, 2, 1_000),
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
     out.clear();
@@ -114,7 +133,7 @@ fn gap_in_commits_keeps_last_seq_and_reconnects() {
             seq: 4,
             op: remote_create(2, 4, 1_000),
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
     assert_eq!(c.last_seq(), 2);
@@ -127,12 +146,12 @@ fn gap_in_commits_keeps_last_seq_and_reconnects() {
             seq: 3,
             op: remote_create(2, 3, 1_000),
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
     assert_eq!(c.last_seq(), 2);
     out.clear();
-    let g2 = c.connected(&mut out);
+    let g2 = c.connected(Now::new(1_000, 0), &mut out);
     assert!(
         matches!(&out[0], Output::Send(ClientMsg::Hello(h)) if h.last_seq == 2 && !h.want_snapshot)
     );
@@ -145,7 +164,7 @@ fn gap_in_commits_keeps_last_seq_and_reconnects() {
                 (4, remote_create(2, 4, 1_000)),
             ],
         ),
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
     assert_eq!(c.last_seq(), 4);
@@ -156,17 +175,17 @@ fn gap_in_commits_keeps_last_seq_and_reconnects() {
 fn permanent_nack_drops_op_and_forces_snapshot_resync() {
     let mut c = client(1);
     let mut out = vec![];
-    let g = c.connected(&mut out);
-    c.message(g, welcome(0, vec![]), 1_000, &mut out);
+    let g = c.connected(Now::new(1_000, 0), &mut out);
+    c.message(g, welcome(0, vec![]), Now::new(1_000, 0), &mut out);
     let op = c.edit(
         OpKind::Create {
             kind: ObjectKind::Rect,
             props: vec![],
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
-    c.persisted(1, &mut out);
+    c.persisted(1, Now::new(1_000, 0), &mut out);
     out.clear();
     c.message(
         g,
@@ -174,13 +193,13 @@ fn permanent_nack_drops_op_and_forces_snapshot_resync() {
             op_id: op.id,
             reason: NackReason::Malformed,
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
     assert_eq!(out, vec![Output::Reconnect]);
     assert_eq!(c.pending_len(), 0);
     out.clear();
-    let g2 = c.connected(&mut out);
+    let g2 = c.connected(Now::new(1_000, 0), &mut out);
     assert!(matches!(&out[0], Output::Send(ClientMsg::Hello(h)) if h.want_snapshot));
     let empty = codec::encode_snapshot(&Document::new());
     c.message(
@@ -195,7 +214,7 @@ fn permanent_nack_drops_op_and_forces_snapshot_resync() {
             },
             presence: vec![],
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
     assert_eq!(c.document().len(), 0, "phantom effect removed");
@@ -205,21 +224,26 @@ fn permanent_nack_drops_op_and_forces_snapshot_resync() {
 fn own_ops_in_catch_up_are_acked_and_dropped_at_snapshot() {
     let mut c = client(1);
     let mut out = vec![];
-    let g = c.connected(&mut out);
-    c.message(g, welcome(0, vec![]), 1_000, &mut out);
+    let g = c.connected(Now::new(1_000, 0), &mut out);
+    c.message(g, welcome(0, vec![]), Now::new(1_000, 0), &mut out);
     let a = c.edit(
         OpKind::Create {
             kind: ObjectKind::Rect,
             props: vec![],
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
-    c.persisted(1, &mut out);
+    c.persisted(1, Now::new(1_000, 0), &mut out);
     c.disconnected();
     out.clear();
-    let g2 = c.connected(&mut out);
-    c.message(g2, welcome(1, vec![(1, a.clone())]), 1_000, &mut out);
+    let g2 = c.connected(Now::new(1_000, 0), &mut out);
+    c.message(
+        g2,
+        welcome(1, vec![(1, a.clone())]),
+        Now::new(1_000, 0),
+        &mut out,
+    );
     assert!(submits(&out).is_empty(), "committed op must not be resent");
     assert_eq!(c.unacked().count(), 0);
     let snap = c.snapshot();
@@ -240,7 +264,7 @@ fn far_future_pending_ops_are_retimestamped_in_counter_order() {
             kind: ObjectKind::Rect,
             props: vec![("x".into(), Value::F64(1.0))],
         },
-        1_000 + skew,
+        Now::new(1_000 + skew, 0),
         &mut out,
     );
     let b = c.edit(
@@ -248,7 +272,7 @@ fn far_future_pending_ops_are_retimestamped_in_counter_order() {
             object: a.id,
             entries: vec![("x".into(), Value::F64(2.0))],
         },
-        1_000 + skew,
+        Now::new(1_000 + skew, 0),
         &mut out,
     );
     let d = c.edit(
@@ -256,14 +280,14 @@ fn far_future_pending_ops_are_retimestamped_in_counter_order() {
             object: a.id,
             entries: vec![("x".into(), Value::F64(3.0))],
         },
-        1_001 + skew,
+        Now::new(1_001 + skew, 0),
         &mut out,
     );
     for i in 1..=3 {
-        c.persisted(i, &mut out);
+        c.persisted(i, Now::new(1_000, 0), &mut out);
     }
     out.clear();
-    let g = c.connected(&mut out);
+    let g = c.connected(Now::new(1_000, 0), &mut out);
     out.clear();
     // Server says the time is 1_000 while the client thinks it is 601_000.
     c.message(
@@ -275,7 +299,7 @@ fn far_future_pending_ops_are_retimestamped_in_counter_order() {
             catch_up: CatchUp::Ops(vec![]),
             presence: vec![],
         },
-        1_000 + skew,
+        Now::new(1_000 + skew, 0),
         &mut out,
     );
     assert_eq!(
@@ -285,7 +309,7 @@ fn far_future_pending_ops_are_retimestamped_in_counter_order() {
     );
     out.clear();
     c.disconnected();
-    let g = c.connected(&mut out);
+    let g = c.connected(Now::new(1_000, 0), &mut out);
     assert!(matches!(&out[0], Output::Send(ClientMsg::Hello(h)) if h.want_snapshot));
     out.clear();
     let empty = codec::encode_snapshot(&Document::new());
@@ -301,10 +325,14 @@ fn far_future_pending_ops_are_retimestamped_in_counter_order() {
             },
             presence: vec![],
         },
-        1_000 + skew,
+        Now::new(1_000 + skew, 0),
         &mut out,
     );
-    let sent = submits(&out);
+    assert!(
+        submits(&out).is_empty(),
+        "re-stamped ops are not sent before the store rewrite"
+    );
+    let sent = complete_persists(&mut c, &mut out);
     assert_eq!(
         sent.iter().map(|o| o.id).collect::<Vec<_>>(),
         vec![a.id, b.id, d.id],
@@ -335,24 +363,24 @@ fn far_future_pending_ops_are_retimestamped_in_counter_order() {
 fn skew_nack_retimestamps_from_the_rejected_op_and_keeps_earlier_ones() {
     let mut c = client(1);
     let mut out = vec![];
-    let g = c.connected(&mut out);
-    c.message(g, welcome(0, vec![]), 1_000, &mut out);
+    let g = c.connected(Now::new(1_000, 0), &mut out);
+    c.message(g, welcome(0, vec![]), Now::new(1_000, 0), &mut out);
     let a = c.edit(
         OpKind::Create {
             kind: ObjectKind::Rect,
             props: vec![],
         },
-        1_000,
+        Now::new(1_000, 0),
         &mut out,
     );
-    c.persisted(1, &mut out);
+    c.persisted(1, Now::new(1_000, 0), &mut out);
     // Clock jumps forward mid-session.
     let b = c.edit(
         OpKind::SetProps {
             object: a.id,
             entries: vec![("x".into(), Value::F64(1.0))],
         },
-        900_000,
+        Now::new(900_000, 0),
         &mut out,
     );
     let d = c.edit(
@@ -360,11 +388,11 @@ fn skew_nack_retimestamps_from_the_rejected_op_and_keeps_earlier_ones() {
             object: a.id,
             entries: vec![("y".into(), Value::F64(1.0))],
         },
-        900_001,
+        Now::new(900_001, 0),
         &mut out,
     );
-    c.persisted(2, &mut out);
-    c.persisted(3, &mut out);
+    c.persisted(2, Now::new(1_000, 0), &mut out);
+    c.persisted(3, Now::new(1_000, 0), &mut out);
     out.clear();
     // Server accepted a (Commit follows later) and rejected b for skew; d never processed.
     c.message(
@@ -373,7 +401,7 @@ fn skew_nack_retimestamps_from_the_rejected_op_and_keeps_earlier_ones() {
             op_id: b.id,
             reason: NackReason::ClockSkew,
         },
-        900_001,
+        Now::new(900_001, 0),
         &mut out,
     );
     c.message(
@@ -381,12 +409,12 @@ fn skew_nack_retimestamps_from_the_rejected_op_and_keeps_earlier_ones() {
         ServerMsg::Bye {
             reason: ByeReason::ClockSkew,
         },
-        900_001,
+        Now::new(900_001, 0),
         &mut out,
     );
     assert_eq!(c.state(), ConnState::Disconnected);
     c.disconnected();
-    let g2 = c.connected(&mut out);
+    let g2 = c.connected(Now::new(1_000, 0), &mut out);
     out.clear();
     c.message(
         g2,
@@ -397,14 +425,14 @@ fn skew_nack_retimestamps_from_the_rejected_op_and_keeps_earlier_ones() {
             catch_up: CatchUp::Ops(vec![(1, a.clone())]),
             presence: vec![],
         },
-        900_002,
+        Now::new(900_002, 0),
         &mut out,
     );
     assert_eq!(out, vec![Output::Reconnect]);
     assert_eq!(c.last_seq(), 1);
     c.disconnected();
     out.clear();
-    let g3 = c.connected(&mut out);
+    let g3 = c.connected(Now::new(1_000, 0), &mut out);
     out.clear();
     let mut base = Document::new();
     base.apply(&a);
@@ -420,10 +448,10 @@ fn skew_nack_retimestamps_from_the_rejected_op_and_keeps_earlier_ones() {
             },
             presence: vec![],
         },
-        900_003,
+        Now::new(900_003, 0),
         &mut out,
     );
-    let sent = submits(&out);
+    let sent = complete_persists(&mut c, &mut out);
     assert_eq!(
         sent.iter().map(|o| o.id).collect::<Vec<_>>(),
         vec![b.id, d.id]

@@ -38,6 +38,15 @@ impl SeenSet {
         self.contiguous
     }
 
+    /// Highest counter seen so far (0 if none).
+    pub fn max_seen(&self) -> u64 {
+        self.sparse
+            .iter()
+            .next_back()
+            .copied()
+            .unwrap_or(self.contiguous)
+    }
+
     pub fn sparse_len(&self) -> usize {
         self.sparse.len()
     }

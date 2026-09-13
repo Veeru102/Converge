@@ -172,6 +172,9 @@ impl Hub {
     }
 
     pub fn open(&mut self, session: SessionId, hello: Hello, now_ms: u64, out: &mut Vec<Effect>) {
+        if self.sessions.contains_key(&session) {
+            return; // duplicate Hello on an open session: idempotent
+        }
         if hello.version != PROTOCOL_VERSION {
             out.push(Effect::Send {
                 to: session,
@@ -291,6 +294,24 @@ impl Hub {
                 continue;
             }
             if op.hlc.wall_ms > now_ms.saturating_add(self.cfg.skew_tolerance_ms) {
+                // A ClockSkew NACK promises the client that no later counter
+                // from it has been accepted (H3). If one has (only possible
+                // when the transport reordered messages), reject this op
+                // permanently instead so the client resyncs.
+                let later_accepted = self
+                    .seen
+                    .get(&replica)
+                    .is_some_and(|s| s.max_seen() > op.id.counter);
+                if later_accepted {
+                    out.push(Effect::Send {
+                        to: session,
+                        msg: ServerMsg::Nack {
+                            op_id: op.id,
+                            reason: NackReason::Rejected,
+                        },
+                    });
+                    continue;
+                }
                 // H3: reject and close; nothing later from this session is processed.
                 out.push(Effect::Send {
                     to: session,
