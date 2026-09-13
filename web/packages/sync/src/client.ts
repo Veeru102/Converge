@@ -34,6 +34,8 @@ export interface ClientOptions {
   /** Test hook: called with the timer id when the client schedules work. */
   setTimeout?: typeof setTimeout;
   clearTimeout?: typeof clearTimeout;
+  /** Diagnostic log sink (connection lifecycle, outputs). */
+  log?: (line: string) => void;
 }
 
 export interface ClientStatus {
@@ -70,20 +72,23 @@ export class Client {
   private snapshotInFlight = false;
   private unsaved = 0;
   private backoffAttempt = 0;
+  private offline = false;
   private readonly clock: Clock;
   private readonly cfg: SyncConfig;
   private readonly presenceTable = new Map<string, PresenceEntry>();
   private changeListeners: Listener<Document>[] = [];
   private statusListeners: Listener<ClientStatus>[] = [];
   private presenceListeners: Listener<PresenceEntry[]>[] = [];
-  private readonly setTimer: typeof setTimeout;
-  private readonly clearTimer: typeof clearTimeout;
+  private readonly setTimer: (fn: () => void, ms?: number) => ReturnType<typeof setTimeout>;
+  private readonly clearTimer: (t: ReturnType<typeof setTimeout>) => void;
 
   constructor(private readonly opts: ClientOptions) {
     this.clock = opts.clock ?? systemClock;
     this.cfg = opts.config ?? DEFAULT_SYNC_CONFIG;
-    this.setTimer = opts.setTimeout ?? setTimeout;
-    this.clearTimer = opts.clearTimeout ?? clearTimeout;
+    // Never store the globals bare: calling them as methods of this object
+    // throws "Illegal invocation" in browsers.
+    this.setTimer = opts.setTimeout ?? ((fn: () => void, ms?: number) => globalThis.setTimeout(fn, ms));
+    this.clearTimer = opts.clearTimeout ?? ((t) => globalThis.clearTimeout(t));
   }
 
   // ----- lifecycle -----
@@ -197,6 +202,25 @@ export class Client {
     this.connect();
   }
 
+  /** Simulated offline mode: drop the connection and stop reconnecting. */
+  setOffline(offline: boolean): void {
+    this.offline = offline;
+    if (offline) {
+      this.disconnect();
+      if (this.reconnectTimer) {
+        this.clearTimer(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+    } else {
+      this.backoffAttempt = 0;
+      this.reconnectNow();
+    }
+  }
+
+  isOffline(): boolean {
+    return this.offline;
+  }
+
   // ----- internals -----
 
   private now(): Now {
@@ -208,12 +232,21 @@ export class Client {
     return this.queue;
   }
 
+  private log(line: string): void {
+    this.opts.log?.(`[converge ${this.engine?.replica.toString(16).slice(0, 6) ?? "?"}] ${line}`);
+  }
+
   private connect(): void {
-    if (this.stopped || this.conn) return;
+    if (this.stopped || this.conn || this.offline) {
+      this.log(`connect skipped (stopped=${this.stopped} conn=${!!this.conn} offline=${this.offline})`);
+      return;
+    }
     const gen = ++this.gen;
+    this.log(`connecting gen=${gen}`);
     const conn = this.opts.transport.connect({
       onOpen: () => this.enqueue(() => {
         if (this.gen !== gen || this.conn !== conn) return;
+        this.log(`open gen=${gen}`);
         const out: Output[] = [];
         this.engineGen = this.engine.connected(this.now(), out);
         this.handle(out);
@@ -225,6 +258,7 @@ export class Client {
         this.onServerMessage(msg);
       }),
       onClose: () => this.enqueue(() => {
+        this.log(`close gen=${gen} current=${this.conn === conn}`);
         if (this.conn !== conn) return;
         this.conn = null;
         this.lostConnection();
@@ -238,10 +272,12 @@ export class Client {
   private lostConnection(): void {
     this.engine.disconnected();
     this.emitStatus();
-    if (this.stopped) return;
+    if (this.stopped || this.offline) return;
     const [lo, hi] = this.opts.reconnectBackoffMs ?? [500, 30_000];
     const delay = Math.min(hi, lo * 2 ** this.backoffAttempt) * (0.5 + Math.random() * 0.5);
     this.backoffAttempt = Math.min(this.backoffAttempt + 1, 10);
+    this.log(`lost connection; reconnect in ${Math.round(delay)} ms (attempt ${this.backoffAttempt})`);
+    if (this.reconnectTimer) this.clearTimer(this.reconnectTimer);
     this.reconnectTimer = this.setTimer(() => {
       this.reconnectTimer = null;
       this.connect();
@@ -251,6 +287,7 @@ export class Client {
   private onServerMessage(msg: ServerMsg): void {
     const out: Output[] = [];
     const before = this.engine.lastSeqValue;
+    this.log(`recv ${msg.type}${msg.type === "commit" ? ` seq=${msg.seq}` : msg.type === "bye" || msg.type === "nack" ? ` ${msg.reason}` : ""}`);
     this.engine.message(this.engineGen, msg, this.now(), out);
     switch (msg.type) {
       case "welcome":
@@ -285,6 +322,7 @@ export class Client {
     for (const o of out) {
       switch (o.type) {
         case "send":
+          this.log(`send ${o.msg.type}${o.msg.type === "submit" ? ` x${o.msg.ops.length}` : ""} conn=${!!this.conn}`);
           this.conn?.send(o.msg);
           break;
         case "persist": {
@@ -312,6 +350,7 @@ export class Client {
           break;
         }
         case "reconnect":
+          this.log("engine asked to reconnect");
           this.disconnect();
           if (this.reconnectTimer) this.clearTimer(this.reconnectTimer);
           this.reconnectTimer = this.setTimer(() => {
