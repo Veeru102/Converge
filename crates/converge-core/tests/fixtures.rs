@@ -369,7 +369,7 @@ fn generate() {
     // Fractional index vectors: a deterministic insertion sequence plus error cases.
     let mut keys: Vec<String> = vec![];
     let mut cases: Vec<J> = vec![];
-    let mut push = |a: Option<&str>, b: Option<&str>, cases: &mut Vec<J>| -> String {
+    let push = |a: Option<&str>, b: Option<&str>, cases: &mut Vec<J>| -> String {
         let r = fracindex::between(a, b).unwrap();
         cases.push(json!({"a": a, "b": b, "expected": r}));
         r
