@@ -23,7 +23,7 @@ underneath them.
 
 <sup>2× speed · [full-quality MP4](docs/media/demo.mp4). One tab is taken offline while the other keeps
 editing with server-side chaos switched on. When it reconnects, the queued edits merge and both tabs
-show the same document. For the sake of the demo, I implemented the Network Lab/Chaos Mode for the demo, but 
+show the same document. I implemented the Network Lab/Chaos Mode for the demo, but 
 Converge handles real real network conditions (WiFi dropouts, mobile handoffs, and packet loss") effectively too! </sup>
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design of the engine, protocol, server and client
