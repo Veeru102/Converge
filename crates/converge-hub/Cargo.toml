@@ -2,7 +2,6 @@
 name = "converge-hub"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 description = "Sans-I/O per-document server state machine"
 
 [dependencies]

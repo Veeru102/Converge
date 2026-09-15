@@ -2,7 +2,6 @@
 name = "converge-core"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 description = "Converge document engine: ids, HLC, LWW registers, fractional indexing, canonical hash"
 
 [dependencies]

@@ -2,7 +2,6 @@
 name = "converge-proto"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 description = "Converge wire protocol message types"
 
 [dependencies]

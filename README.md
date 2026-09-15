@@ -1,10 +1,23 @@
 # Converge
 
-A local-first multiplayer canvas with its own sync engine. Several people can
-edit the same document at once, keep editing while offline, and every replica
-ends up in the same state when they reconnect. The drawing UI is deliberately
-simple; most of the work went into the sync model and the tooling that checks
-it actually converges under bad network conditions.
+Converge is a multiplayer whiteboard where the network is allowed to be
+terrible. Open a document in two browsers and draw: edits show up on the other
+side in a few milliseconds. Now pull the plug on one of them. Keep drawing,
+reload the tab, close it, come back an hour later on a connection that drops a
+third of its packets and duplicates the rest. When it reconnects, both sides
+end up with byte-for-byte the same document, and the app can prove it: every
+client and the server hash their state, and the numbers match.
+
+That guarantee is the whole project. It comes from a small custom CRDT-style
+engine where the document is a pure function of the *set* of edits it has
+seen, so order, duplication and delay cannot change the result. The same
+engine and sync protocol are written twice, in Rust for the server and
+TypeScript for the browser, and kept identical by shared fixtures. To be sure
+they hold up, the protocol runs inside a deterministic simulator that injects
+latency, drops, reordering, clock skew and crashes across thousands of seeded
+runs, and the real server has a built-in chaos mode you can switch on from
+the UI. The drawing tools are simple on purpose; the interesting part is
+underneath them.
 
 ![Two users on one document with the Network Lab open](docs/media/canvas.png)
 
@@ -112,7 +125,3 @@ To regenerate the cross-language fixtures after an engine change:
 `cargo test -p converge-core --test fixtures -- --ignored generate`,
 `cargo test -p converge-proto --test wire -- --ignored generate`, and the
 commands in `fixtures/sync/README.md`.
-
-## License
-
-MIT
