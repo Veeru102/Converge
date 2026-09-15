@@ -19,7 +19,11 @@ runs, and the real server has a built-in chaos mode you can switch on from
 the UI. The drawing tools are simple on purpose; the interesting part is
 underneath them.
 
-![Two users on one document with the Network Lab open](docs/media/canvas.png)
+![Two tabs on one document: live edits, one side goes offline under chaos, both converge](docs/media/demo.gif)
+
+<sup>2× speed · [full-quality MP4](docs/media/demo.mp4). One tab is taken offline while the other keeps
+editing with server-side chaos switched on; when it reconnects, the queued edits merge and both tabs
+show the same document.</sup>
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design of the engine, protocol, server and client
 - [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — correctness invariants, how they are tested, and the bugs the simulator found

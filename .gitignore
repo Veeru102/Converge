@@ -8,3 +8,4 @@ web/apps/canvas/bench/results
 /deploy/pgdata
 .DS_Store
 *.log
+*.mov
