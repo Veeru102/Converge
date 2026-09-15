@@ -16,14 +16,15 @@ TypeScript for the browser, and kept identical by shared fixtures. To be sure
 they hold up, the protocol runs inside a deterministic simulator that injects
 latency, drops, reordering, clock skew and crashes across thousands of seeded
 runs, and the real server has a built-in chaos mode you can switch on from
-the UI. The drawing tools are simple on purpose; the interesting part is
+the UI. The drawing tools are simple on purpose. The interesting part is
 underneath them.
 
 ![Two tabs on one document: live edits, one side goes offline under chaos, both converge](docs/media/demo.gif)
 
 <sup>2× speed · [full-quality MP4](docs/media/demo.mp4). One tab is taken offline while the other keeps
-editing with server-side chaos switched on; when it reconnects, the queued edits merge and both tabs
-show the same document.</sup>
+editing with server-side chaos switched on. When it reconnects, the queued edits merge and both tabs
+show the same document. For the sake of the demo, I implemented the Network Lab/Chaos Mode for the demo, but 
+Converge handles real real network conditions (WiFi dropouts, mobile handoffs, and packet loss") effectively too! </sup>
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design of the engine, protocol, server and client
 - [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — correctness invariants, how they are tested, and the bugs the simulator found
