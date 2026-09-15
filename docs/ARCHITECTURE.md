@@ -1,4 +1,4 @@
-# Converge — Architecture & Milestone Plan
+# Converge — Architecture
 
 Converge is a local-first, multiplayer canvas. Many users edit one document in
 real time; each user can keep editing while disconnected; on reconnect every
@@ -7,8 +7,8 @@ UI is deliberately thin. The engineering investment is in the synchronization
 model, its determinism, and the machinery that proves it converges under
 hostile network conditions.
 
-This document fixes the design decisions for v1 and the milestones to reach
-it. Section 15 lists the decisions worth confirming before code is written.
+This document describes the design as built. The correctness invariants it
+relies on, and the tests that check them, are in [`INVARIANTS.md`](INVARIANTS.md).
 
 ---
 
@@ -34,10 +34,10 @@ it. Section 15 lists the decisions worth confirming before code is written.
    after the server confirms it, and the server confirms only after the op is
    committed to Postgres. This single invariant is what makes worker crash
    recovery correct later without redesign.
-5. **Tight v1 scope.** Rectangles and text, property-level LWW, fractional
-   z-order, tombstones, offline queues, resume, chaos, convergence tests.
-   Groups, connectors, layers, sequence-CRDT text, undo, multi-worker are
-   designed-for but not built in v1.
+5. **Small scope.** Rectangles, ellipses, lines and text, property-level
+   LWW, fractional z-order, tombstones, offline queues, resume, chaos,
+   convergence tests. Groups, connectors, layers, sequence-CRDT text, undo
+   and multi-worker are designed for but not implemented.
 
 ---
 
@@ -117,19 +117,19 @@ Value = Null | Bool | I64 | F64 | Str | Color(u32) | FracIndex(String) | ObjRef(
 The engine is schema-agnostic: it merges arbitrary `(key, value)` registers.
 The UI defines which keys mean what:
 
-| kind (tag) | props (v1) |
+| kind (tag) | props |
 |------------|-----------|
 | common | `z: FracIndex`, `opacity: F64` (0–1, default 1) |
 | `rect` (1), `ellipse` (5) | `x y w h: F64`, `fill stroke: Color`, `stroke_width: F64` |
 | `text` (2) | `x y w: F64`, `text: Str`, `size: F64`, `color: Color` |
 | `line` (6) | `x1 y1 x2 y2: F64`, `stroke: Color`, `stroke_width: F64`, `arrow: Bool` |
-| `group` (3), `connector` (4) | reserved (M6): `parent: ObjRef`, `from/to: ObjRef` |
+| `group` (3), `connector` (4) | reserved: `parent: ObjRef`, `from/to: ObjRef` |
 
 Kinds are an enum with a one-byte tag in the canonical encoding (pinned by
 `fixtures/engine/all_object_kinds.json`); adding a kind is additive. Props are
 whole-value LWW registers: a concurrent move and resize of one object may mix
 `x` from one user with `w` from another, and concurrent text edits keep the
-last writer's whole string. Both are accepted v1 semantics.
+last writer's whole string. Both are accepted semantics.
 
 ### 3.2 Hybrid Logical Clock
 
@@ -184,7 +184,7 @@ the accepted unfairness bound.
 | `SetProp` arrives before `Create` (reordering) | Registers are written into a *ghost* object (`created=false`); ghosts are never rendered or exported. `Create` later flips `created`. |
 | Op targets an object that was garbage-collected | Becomes a ghost, never rendered, dropped at next GC. |
 
-Text content in v1 is a single `Str` register (whole-string LWW, coalesced
+Text content is a single `Str` register (whole-string LWW, coalesced
 per keystroke burst). This is the one place where concurrent edits lose work,
 and it is an explicit scope cut; §14 describes the upgrade path to a
 per-object sequence CRDT without changing the envelope.
@@ -196,10 +196,10 @@ string key; `render order = sort by (z, ObjectId)`. Moving an object emits a
 single `SetProps{z: keyBetween(a, b)}`. Concurrent moves that produce equal
 keys are disambiguated by `ObjectId`, so the order is total and identical on
 every replica. Key length grows with repeated insertion between the same
-neighbours; a `rebalance` (rewrite all `z` in a doc) is a normal batch of
-`SetProps` and is a v1.5 item.
+neighbours; a `rebalance` (rewrite all `z` in a doc) would be a normal batch
+of `SetProps`. It is not implemented.
 
-Layers and groups (post-v1) are the same mechanism one level deeper: a
+Layers and groups (not implemented) are the same mechanism one level deeper: a
 `parent: ObjRef` register plus `z` *within* that parent. Cycles created by
 concurrent re-parenting are resolved deterministically at read time: walk to
 root; if the walk revisits a node, the object with the lowest `ObjectId` in
@@ -211,7 +211,7 @@ projection knows about cycles.
 * `Delete{obj}` sets `deleted := true @ hlc`; `Restore{obj}` sets false.
 * Tombstoned objects stay in state and in snapshots. They are excluded from
   render, hit-testing and export, but their registers still merge.
-* **GC policy (M5):** the server may drop tombstones whose `deleted.at` is
+* **GC policy (designed, not implemented):** the server may drop tombstones whose `deleted.at` is
   older than the retention horizon *and* older than the oldest op the server
   still retains for resume. A client that has been offline longer than the
   retained window gets a full snapshot anyway; any op it then replays against
@@ -240,20 +240,20 @@ message Op {
     SetProps set      = 11;  // object, repeated (key, Value)  — atomic, one hlc
     Delete   delete   = 12;  // object
     Restore  restore  = 13;  // object
-    // reserved 14..19 for v2: SetParent, TextSplice, Rebalance
+    // reserved 14..19: SetParent, TextSplice, Rebalance
   }
 }
 ```
 
 Rules:
 * One `Op` = one atomic intent from one replica. Multi-prop writes share the
-  op's `Hlc`. There is no multi-object transaction in v1.
+  op's `Hlc`. There is no multi-object transaction.
 * `Create` carries initial props so that an object never exists in a
   half-initialised state on any replica.
 * Ops are immutable once accepted by the server. Pending (unacked) ops may be
   coalesced or re-timestamped by their own replica only.
 * Limits enforced by server: ≤ 64 KiB per op, ≤ 64 props per op, ≤ 32 KiB per
-  string. There is no rate-limit NACK in v1: overload is handled by bounded
+  string. There is no rate-limit NACK: overload is handled by bounded
   channels and TCP backpressure, so a retried op never changes order.
 
 **Local coalescing.** A drag emits `SetProps{x,y}` at ~30 Hz. While an op is
@@ -376,9 +376,9 @@ ack-after-durable gate, so it is not slowed by Postgres.
 | validation | shape only | size, skew, value finiteness (rate via backpressure) |
 | presence | throttle & render | coalesce & fan out |
 | resume | remembers `last_seq`, resends pending | serves ops-since or snapshot |
-| chaos | `ChaosTransport` for demos/tests | `FaultInjector` per session via admin API |
+| chaos | offline toggle, Network Lab UI | fault injector per session via `/admin/chaos` |
 
-Auth/identity is out of scope for v1: `Hello.user` is self-declared. The
+Auth/identity is out of scope: `Hello.user` is self-declared. The
 server is structured so a token check slots into the upgrade handler.
 
 ---
@@ -452,8 +452,8 @@ snapshots (doc_id uuid, seq bigint, payload bytea, created_at, primary key (doc_
   `snapshots` and advances `documents.snapshot_seq`. Snapshots are written
   from a cheap `clone()` of the state on a blocking thread so the actor keeps
   serving.
-* **Pruning**: ops with `seq < snapshot_seq − 50 000` are deleted nightly;
-  three most recent snapshots are kept. `floor` in §5.2 comes from the oldest
+* **Pruning**: after each snapshot, ops with `seq < snapshot_seq − retain_ops`
+  (50 000 by default) are deleted. `floor` in §5.2 comes from the oldest
   retained op.
 * **Load**: on first `Hello` for a cold doc, the actor loads the newest
   snapshot and replays ops after it. Replay throughput target ≥ 200k ops/s
@@ -506,21 +506,22 @@ session and emits `PresenceLeave` on any close.
 * **Timing**: everything that needs a clock takes `now: Instant/u64` as an
   argument; the `Hub` never calls `SystemTime::now()` itself.
 
-### 11.1 Multiple workers & failover (post-v1, designed now)
+### 11.1 Multiple workers & failover (designed, not implemented)
 
 * `doc_leases (doc_id pk, worker_id, expires_at)` in Postgres. A worker
   acquires a lease (`INSERT … ON CONFLICT DO UPDATE WHERE expires_at < now()`)
   before opening a doc and renews it every lease/3.
 * A `Hello` arriving at a worker that does not hold the lease gets
-  `Bye{Redirect{url}}` (v2) — sticky routing at the load balancer keeps this
+  `Bye{Redirect{url}}` — sticky routing at the load balancer keeps this
   rare. Redis pub/sub or an internal gRPC hop are alternatives if redirects
   prove awkward; the lease table stays either way.
 * **Worker crash**: lease expires (10 s), next `Hello` elsewhere acquires it,
   loads snapshot + ops from Postgres. Because acked ⇒ durable, no confirmed
   op is lost; unconfirmed ops are still in clients' pending queues and are
   resent. The convergence property makes duplicate delivery during the
-  handover harmless. This scenario is a named simulation test from M4
-  onward, so the single-worker build already satisfies the recovery contract.
+  handover harmless. The simulator's `server_crash_before_durable` scenario
+  exercises this recovery path, so the single-worker build already satisfies
+  the recovery contract.
 
 ---
 
@@ -537,7 +538,7 @@ Four layers, each strictly deterministic given a seed.
 2. **Cross-implementation conformance fixtures** (`fixtures/*.json`).
    The Rust test suite emits traces: `{ops: [...], expected_hash, expected_state}`
    for hand-picked scenarios (concurrent move, delete-vs-update, ghost
-   before create, frac-index ties, HLC ties across replicas) plus 200 random
+   before create, frac-index ties, HLC ties across replicas) plus 40 random
    seeds. Vitest replays them through the TS engine. CI fails on any
    mismatch. Fixtures are the contract between the two engines.
 3. **Protocol simulation** (`converge-sim`).
@@ -559,9 +560,9 @@ Four layers, each strictly deterministic given a seed.
    **semantic oracle** — all accepted ops sorted by `(hlc, replica)` and
    applied once — equals the hub state, so a bug where every replica agrees
    on the *wrong* answer is still caught.
-   `cargo run -p converge-sim -- --seed 42 --clients 5 --steps 20000`
-   reproduces any failure; CI runs a fixed seed band nightly and a small band
-   on every PR. Traces are dumped as JSON on failure for the visual replayer.
+   `cargo run -p converge-sim -- --scenario <name> --seed 42` reproduces any
+   failure; CI runs a 100-seed band on every push. The trace of a failing run
+   is printed, or written to a file with `--dump`.
 4. **Browser/e2e** (Playwright).
    Server started with `CHAOS_SEED`; three browser contexts edit concurrently
    while the test toggles `/admin/chaos` profiles (latency, 20 % drop,
@@ -570,12 +571,12 @@ Four layers, each strictly deterministic given a seed.
    `window.__converge.hash()` equals `GET /docs/:id/hash`. IndexedDB paths
    are unit-tested with `fake-indexeddb`.
 
-**Chaos mode in the real server** is the same `FaultPlan` type wrapping each
-session's inbound and outbound streams (`FaultInjector<S: Stream>`), seeded
+**Chaos mode in the real server** applies latency, drops, duplicates and
+forced disconnects to each session's inbound and outbound messages, seeded
 per session from `CHAOS_SEED ⊕ session_id`, so a given message sequence
-yields identical faults across runs. The client `ChaosTransport` is the TS
-port, exposed in a debug panel (latency slider, drop %, "go offline",
-"duplicate next op").
+yields identical faults across runs. It is configured at runtime through
+`PUT /admin/chaos`; the web app's Network Lab drives it and adds a
+simulated-offline switch on the client side.
 
 **What determinism requires and how it is enforced:**
 no `HashMap` iteration in any code path that produces ordered output
@@ -606,12 +607,12 @@ converge/
 ├─ web/  (pnpm workspace)
 │  ├─ packages/protocol      # protobuf-es generated code + Envelope codec
 │  ├─ packages/engine        # TS port of converge-core; fixture conformance tests (vitest)
-│  ├─ packages/sync          # sans-I/O SyncEngine; Transport iface; WsTransport, ChaosTransport,
-│  │                         #   FakeTransport; IndexedDbStore (idb) + MemoryStore
+│  ├─ packages/sync          # sans-I/O SyncEngine; Transport iface; WebSocketTransport;
+│  │                         #   IndexedDbStore (idb) + MemoryStore; BenchStats
 │  └─ apps/canvas            # React + Vite: SVG canvas, selection/drag, presence layer,
-│                            #   debug panel (hash, pending, chaos controls, replica id)
-├─ deploy/  docker-compose.yml (postgres, server, web, prometheus), Dockerfiles, prometheus.yml
-└─ docs/    this file, PROTOCOL.md (generated tables), TESTING.md
+│                            #   Network Lab (hash, queue, chaos controls, benchmarks); Playwright e2e
+├─ deploy/  Dockerfile, docker-compose.yml (postgres, server, prometheus), prometheus.yml
+└─ docs/    this file, INVARIANTS.md
 ```
 
 Dependency direction is strictly downward: `core ← proto ← hub ← server`,
@@ -626,12 +627,12 @@ Nothing above `core`/`engine` may reimplement a merge rule.
 |----------------------|-----------------------|
 | LWW register map, tombstones, ghosts, `apply()` | Tokio, Axum, tungstenite (via axum), tower |
 | HLC + skew handling | prost / protobuf-es codegen (`protoc-bin-vendored`, `@bufbuild/buf`) |
-| Fractional indexing (both languages, one spec) | sqlx + migrations, `deadpool`/sqlx pool |
+| Fractional indexing (both languages, one spec) | sqlx + migrations |
 | Canonical state hash | blake3 (Rust), `@noble/hashes` blake3 (TS) |
 | `Hub` sequencing, `SeenSet`, resume | `metrics` + `metrics-exporter-prometheus`, `tracing` |
 | Client `SyncEngine`, pending queue, coalescing | `idb` (IndexedDB wrapper), Web Locks API |
 | Discrete-event simulator, `FaultPlan`, `FaultInjector` | proptest, `rand_chacha`, vitest, Playwright, `fake-indexeddb` |
-| Snapshot encoding *layout* (as `.proto`) | React, Vite, zustand (UI-only state), pnpm |
+| Snapshot encoding *layout* (as `.proto`) | React, Vite, pnpm |
 
 Why not Yjs/Automerge: the point is owning the semantics (property-level LWW
 with atomic multi-prop writes, ghosts, fractional z-order, deterministic GC)
@@ -644,90 +645,4 @@ sequence-CRDT for text lands (that is where duplication gets expensive).
 
 Encoding: **Protobuf** (compact varints, schema is the contract for wire,
 IndexedDB and Postgres payloads, evolution rules are explicit). MessagePack
-via serde would cut codegen friction; it is the fallback if the proto
-pipeline proves painful in the first milestone.
-
----
-
-## 15. Decisions to confirm
-
-1. **Conflict order = HLC, not server arrival order.** Gives "latest edit
-   wins" semantics that behave sensibly for offline replicas and removes any
-   rebase step. Cost: the skew-NACK path in §3.2. (Alternative: Figma-style
-   server-order LWW — simpler clocks, but stale offline edits overwrite fresh
-   online ones on reconnect.)
-2. **Text = whole-string LWW in v1.** Sequence-CRDT text is a v2 op kind.
-3. **TS engine + conformance fixtures** rather than Rust→WASM.
-4. **Protobuf** over MessagePack.
-5. **acked ⇒ durable** (group-commit before broadcast) as the default ack mode.
-
----
-
-## 16. Milestones
-
-Each milestone ends with a demo and a green CI; nothing in a later milestone
-changes the wire format of an earlier one without a `PROTOCOL_VERSION` bump.
-
-### M0 — Skeleton (foundation)
-* Cargo workspace with the seven crates (empty but compiling), pnpm workspace
-  with four packages, proto pipeline generating both sides, `fixtures/`
-  dir, CI (fmt, clippy `-D warnings`, test, vitest, buf lint), docker-compose
-  with Postgres + Prometheus, `converge-server` serving `/healthz`,
-  `/metrics` and echoing a `Hello`/`Welcome`.
-* Exit: `cargo test && pnpm test` green; `docker compose up` brings up the
-  stack (Docker not required for local dev — a local Postgres URL works).
-
-### M1 — Engine (both languages)
-* `converge-core`: ids, `Hlc`, `Value`, `Document::apply`, ghosts,
-  tombstones, `FracIndex::between`, canonical hash, snapshot codec.
-* proptest convergence suite; fixture generator (`cargo test --features gen-fixtures`).
-* `@converge/engine`: port + vitest conformance run over fixtures.
-* Exit: 10 000 random permutation/duplication trials converge; every fixture
-  passes in TS; hash agrees byte-for-byte.
-
-### M2 — Realtime server + first UI
-* `converge-hub` (`Submit`/`Commit`/`Ack`/`Nack`, `SeenSet`, presence
-  coalescing, in-memory log + resume-by-ops), `converge-storage` (Postgres
-  ops/snapshots, in-memory impl), `converge-server` (doc actor, session
-  task, persister with durable acks, periodic snapshots, cold load,
-  metrics).
-* `@converge/sync` with `WsTransport` and `MemoryStore`; `apps/canvas`
-  with rectangles + text, drag, resize, colour, z-order, cursors and
-  selection outlines, hash/pending debug pill.
-* Exit: two browsers edit the same doc live; kill and restart the server;
-  both browsers reconnect, resume by `seq` and hashes match `/docs/:id/hash`.
-
-### M3 — Offline & reconnect
-* `IndexedDbStore` (meta/snapshot/pending), pending-before-send ordering,
-  local coalescing, startup from local snapshot, orphan-queue flush via Web
-  Locks, clock-offset + `ClockSkew` re-timestamp path, backoff reconnect,
-  snapshot-resume branch (client behind the retained window).
-* Exit: edit offline for minutes in two tabs, reconnect in either order,
-  converge; reload mid-drag loses nothing; `fake-indexeddb` unit suite.
-
-### M4 — Deterministic simulation & chaos
-* `converge-client-sync` reference client; `converge-sim` with `Network`,
-  `FaultPlan`, virtual clock, seeded RNG, quiescence detection, JSON trace
-  dump, `sim` CLI; named scenarios: reorder-before-create, dup ack loss,
-  partition heal, worker crash + rebuild from durable log, long offline →
-  snapshot resume.
-* `FaultInjector` in the server + `/admin/chaos` API; `ChaosTransport` and
-  debug panel in the client; Playwright suite under chaos profiles.
-* Exit: 1 000 seeds × 5 clients converge in CI; a chaos e2e run converges;
-  any failing seed reproduces from the CLI.
-
-### M5 — Hardening & operations
-* Op pruning, tombstone GC horizon, snapshot retention, z-key rebalance,
-  rate limits, slow-consumer eviction, backpressure metrics, graceful
-  shutdown, Prometheus dashboards (ops/s, apply/persist latency, resume kind,
-  sessions per doc, chaos counters), load test (50 sessions × 20 ops/s on one
-  doc).
-* Exit: p99 submit→commit < 50 ms locally with durable acks; 24 h soak with
-  chaos enabled shows no divergence.
-
-### M6 — Post-v1 (designed, not scheduled)
-* `SetParent` + groups/layers with deterministic cycle projection;
-  connectors (`from/to: ObjRef`, dangling refs render nothing);
-  sequence-CRDT text (`TextSplice`) behind a new op kind; local undo/redo
-  as inverse ops with fresh HLCs; multi-worker leases, redirect, failover
-  drills in the simulator; auth.
+via serde would have cut codegen friction but loses the explicit schema.

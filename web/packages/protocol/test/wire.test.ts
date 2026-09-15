@@ -3,11 +3,21 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hex, unhex } from "@converge/engine";
 import {
-  clientMsgFromJson, clientMsgToJson, decodeClient, decodeServer, encodeClient, encodeServer, serverMsgFromJson, serverMsgToJson,
-  type ClientMsgJson, type ServerMsgJson,
+  clientMsgFromJson,
+  clientMsgToJson,
+  decodeClient,
+  decodeServer,
+  encodeClient,
+  encodeServer,
+  serverMsgFromJson,
+  serverMsgToJson,
+  type ClientMsgJson,
+  type ServerMsgJson,
 } from "../src/index.js";
 
-const fx = JSON.parse(readFileSync(join(import.meta.dirname, "../../../../fixtures/wire.json"), "utf8")) as {
+const fx = JSON.parse(
+  readFileSync(join(import.meta.dirname, "../../../../fixtures/wire.json"), "utf8"),
+) as {
   client: Array<{ json: ClientMsgJson; bytes: string }>;
   server: Array<{ json: ServerMsgJson; bytes: string }>;
 };

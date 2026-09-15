@@ -90,8 +90,14 @@ export class TinyServer implements Transport {
         const last = Number(msg.hello.lastSeq);
         const ops = this.log.slice(last).map((op, i) => ({ seq: BigInt(last + i + 1), op }));
         this.send(live, {
-          type: "welcome", session: 1n, serverTimeMs: this.serverTimeMs, durableHeadSeq: BigInt(this.head),
-          catchUp: msg.hello.wantSnapshot || last > this.head ? { kind: "snapshot", bytes: encode(this.doc), seq: BigInt(this.head) } : { kind: "ops", ops },
+          type: "welcome",
+          session: 1n,
+          serverTimeMs: this.serverTimeMs,
+          durableHeadSeq: BigInt(this.head),
+          catchUp:
+            msg.hello.wantSnapshot || last > this.head
+              ? { kind: "snapshot", bytes: encode(this.doc), seq: BigInt(this.head) }
+              : { kind: "ops", ops },
           presence: [],
         });
         break;

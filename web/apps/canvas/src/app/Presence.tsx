@@ -1,7 +1,13 @@
 import type { PresenceEntry } from "@converge/protocol";
 import { hexOf } from "../state/model.js";
 
-export function PresenceAvatars({ me, others }: { me: { name: string; color: number }; others: PresenceEntry[] }) {
+export function PresenceAvatars({
+  me,
+  others,
+}: {
+  me: { name: string; color: number };
+  others: PresenceEntry[];
+}) {
   const initial = (n: string) => (n.trim()[0] ?? "?").toUpperCase();
   return (
     <div className="row" data-testid="presence">
@@ -11,13 +17,20 @@ export function PresenceAvatars({ me, others }: { me: { name: string; color: num
           <span className="tip">{me.name} (you)</span>
         </div>
         {others.map((p) => (
-          <div key={p.replica.toString()} className="avatar" style={{ background: hexOf(p.user.color, "#888") }} data-testid="avatar">
+          <div
+            key={p.replica.toString()}
+            className="avatar"
+            style={{ background: hexOf(p.user.color, "#888") }}
+            data-testid="avatar"
+          >
             {initial(p.user.name)}
             <span className="tip">{p.user.name}</span>
           </div>
         ))}
       </div>
-      <span className="online-count" data-testid="online-count">{others.length + 1} online</span>
+      <span className="online-count" data-testid="online-count">
+        {others.length + 1} online
+      </span>
     </div>
   );
 }

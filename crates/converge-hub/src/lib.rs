@@ -4,7 +4,7 @@
 //! dedup and sessions. It never touches a socket or a clock: every entry
 //! point takes `now_ms` and pushes [`Effect`]s for the adapter (Tokio server
 //! or simulator) to carry out. See `docs/ARCHITECTURE.md` §5 and the
-//! invariants P1–P8 in `docs/IMPLEMENTATION_RISKS.md`.
+//! invariants P1–P8 in `docs/INVARIANTS.md`.
 
 #![forbid(unsafe_code)]
 

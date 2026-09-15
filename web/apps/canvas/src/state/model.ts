@@ -1,7 +1,20 @@
 /** Reading the prop vocabulary (ARCHITECTURE.md §3.1) off engine objects. */
-import { valueAsBool, valueAsColor, valueAsNumber, valueAsString, type ObjectId, type ObjectState, type Value } from "@converge/engine";
+import {
+  valueAsBool,
+  valueAsColor,
+  valueAsNumber,
+  valueAsString,
+  type ObjectId,
+  type ObjectState,
+  type Value,
+} from "@converge/engine";
 
-export interface Box { x: number; y: number; w: number; h: number }
+export interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export const num = (o: ObjectState, k: string, d = 0): number => valueAsNumber(o.get(k)) ?? d;
 export const str = (o: ObjectState, k: string, d = ""): string => valueAsString(o.get(k)) ?? d;
@@ -42,8 +55,16 @@ export function bounds(o: ObjectState): Box {
     case "text":
       return textBox(o);
     case "line": {
-      const x1 = num(o, "x1"), y1 = num(o, "y1"), x2 = num(o, "x2"), y2 = num(o, "y2");
-      return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+      const x1 = num(o, "x1"),
+        y1 = num(o, "y1"),
+        x2 = num(o, "x2"),
+        y2 = num(o, "y2");
+      return {
+        x: Math.min(x1, x2),
+        y: Math.min(y1, y2),
+        w: Math.abs(x2 - x1),
+        h: Math.abs(y2 - y1),
+      };
     }
     default:
       return { x: num(o, "x"), y: num(o, "y"), w: num(o, "w", 100), h: num(o, "h", 60) };
@@ -52,9 +73,15 @@ export function bounds(o: ObjectState): Box {
 
 export function union(boxes: Box[]): Box | null {
   if (boxes.length === 0) return null;
-  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  let x1 = Infinity,
+    y1 = Infinity,
+    x2 = -Infinity,
+    y2 = -Infinity;
   for (const b of boxes) {
-    x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h);
+    x1 = Math.min(x1, b.x);
+    y1 = Math.min(y1, b.y);
+    x2 = Math.max(x2, b.x + b.w);
+    y2 = Math.max(y2, b.y + b.h);
   }
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
 }

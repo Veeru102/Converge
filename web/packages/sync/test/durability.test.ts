@@ -1,5 +1,5 @@
 /**
- * Crash-window tests T2.1–T2.9 from docs/IMPLEMENTATION_RISKS.md §2, against
+ * Crash-window tests T2.1–T2.9 from docs/INVARIANTS.md §2, against
  * the real IndexedDbStore running on fake-indexeddb.
  */
 import "fake-indexeddb/auto";
@@ -49,12 +49,19 @@ class GatedStore implements Store {
   close = () => this.inner.close();
 }
 
-async function newTab(opts: { transport?: TinyServer; gated?: boolean; snapshotIdleMs?: number } = {}) {
+async function newTab(
+  opts: { transport?: TinyServer; gated?: boolean; snapshotIdleMs?: number } = {},
+) {
   const idb = await IndexedDbStore.open(DOC, { locks });
   const store = new GatedStore(idb);
   const client = new Client({
-    docId: DOC, user: USER, store, transport: opts.transport ?? server, snapshotIdleMs: opts.snapshotIdleMs ?? 60_000,
-    snapshotEveryOps: 1_000_000, reconnectBackoffMs: [1, 5],
+    docId: DOC,
+    user: USER,
+    store,
+    transport: opts.transport ?? server,
+    snapshotIdleMs: opts.snapshotIdleMs ?? 60_000,
+    snapshotEveryOps: 1_000_000,
+    reconnectBackoffMs: [1, 5],
   });
   await client.start();
   await settle();
@@ -62,7 +69,9 @@ async function newTab(opts: { transport?: TinyServer; gated?: boolean; snapshotI
 }
 
 function submittedIds(): string[] {
-  return server.received.flatMap((m) => (m.type === "submit" ? m.ops.map((o) => `${o.id.replica}:${o.id.counter}`) : []));
+  return server.received.flatMap((m) =>
+    m.type === "submit" ? m.ops.map((o) => `${o.id.replica}:${o.id.counter}`) : [],
+  );
 }
 
 describe("IndexedDB durability and crash ordering", () => {
@@ -103,7 +112,9 @@ describe("IndexedDB durability and crash ordering", () => {
 
     const { client: again } = await newTab();
     await settle(50);
-    const sent = server.received.filter((m) => m.type === "submit").flatMap((m) => (m.type === "submit" ? m.ops : []));
+    const sent = server.received
+      .filter((m) => m.type === "submit")
+      .flatMap((m) => (m.type === "submit" ? m.ops : []));
     expect(sent.length).toBe(1);
     expect(sent[0]!.id).toEqual(a.id);
     expect(hlcEquals(sent[0]!.hlc, a.hlc)).toBe(true);
@@ -176,7 +187,12 @@ describe("IndexedDB durability and crash ordering", () => {
     const raw = await IndexedDbStore.open(DOC, { locks });
     const slotA = await raw.acquireReplica(() => 1n);
     const bytes = new Document();
-    const w = (seq: bigint): SnapshotWrite => ({ bytes: new Uint8Array([67, 86, 71, 83, 1, 0, 0, 0, 0, 0, 0, 0, 0]), seq, highWater: { wall: 0n, logical: 0 }, acked: [] });
+    const w = (seq: bigint): SnapshotWrite => ({
+      bytes: new Uint8Array([67, 86, 71, 83, 1, 0, 0, 0, 0, 0, 0, 0, 0]),
+      seq,
+      highWater: { wall: 0n, logical: 0 },
+      acked: [],
+    });
     void bytes;
     expect(await raw.writeSnapshot(1n, w(100n))).toBe(true);
     expect(await raw.writeSnapshot(1n, w(90n))).toBe(false);
@@ -228,14 +244,17 @@ describe("IndexedDB durability and crash ordering", () => {
 
   it("T2.7 random crash/restart interleavings never lose a saved op (model check)", async () => {
     let seed = 12345;
-    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
     let { client, store } = await newTab();
     const saved: Op[] = []; // ops whose local write resolved
     let objects: Op["id"][] = [];
     for (let step = 0; step < 60; step++) {
       const r = rnd();
       if (r < 0.45) {
-        const kind = objects.length === 0 || rnd() < 0.3 ? rectKind : move(objects[Math.floor(rnd() * objects.length)]!, rnd() * 100);
+        const kind =
+          objects.length === 0 || rnd() < 0.3
+            ? rectKind
+            : move(objects[Math.floor(rnd() * objects.length)]!, rnd() * 100);
         const crashInFlight = rnd() < 0.3;
         if (crashInFlight) store.holdAppends = true; // the write never completes
         const op = client.edit(kind);
@@ -271,7 +290,10 @@ describe("IndexedDB durability and crash ordering", () => {
         for (const op of saved) {
           const id = op.kind.op === "create" ? op.id : op.kind.object;
           const mine = client.document.get(id);
-          expect(mine, `object of saved op ${op.id.counter} after restart at step ${step}`).toBeDefined();
+          expect(
+            mine,
+            `object of saved op ${op.id.counter} after restart at step ${step}`,
+          ).toBeDefined();
           const want = ref.get(id)!;
           for (const [k, reg] of want.props) {
             const have = mine!.props.get(k)!;

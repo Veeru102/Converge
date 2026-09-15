@@ -3,7 +3,7 @@
 //! One [`Hub`] plus N reference clients ([`ClientSync`]) exchange messages
 //! through simulated connections under a seeded [`FaultPlan`]. Everything is
 //! driven from a virtual clock and forked `ChaCha8Rng` streams, so a
-//! `(scenario, seed)` pair replays exactly. See `docs/IMPLEMENTATION_RISKS.md`
+//! `(scenario, seed)` pair replays exactly. See `docs/INVARIANTS.md`
 //! §4 for the architecture and the invariants I1–I8 checked here.
 
 #![forbid(unsafe_code)]

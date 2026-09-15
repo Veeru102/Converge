@@ -22,19 +22,30 @@ export interface SyncView {
   localHash: string;
 }
 
-export async function fetchServerView(docId: string): Promise<ServerView | null> {
+async function fetchServerView(docId: string): Promise<ServerView | null> {
   try {
     const r = await fetch(`/docs/${encodeURIComponent(docId)}/hash`);
     if (!r.ok) return null;
     const j = (await r.json()) as { hash: string; durable_seq: number; sessions: number };
-    return { hash: j.hash, durableSeq: BigInt(j.durable_seq), sessions: j.sessions, at: Date.now() };
+    return {
+      hash: j.hash,
+      durableSeq: BigInt(j.durable_seq),
+      sessions: j.sessions,
+      at: Date.now(),
+    };
   } catch {
     return null;
   }
 }
 
 /** Derives the user-facing sync state and, when `probe` is on, checks the server hash. */
-export function useSyncStatus(client: Client, docId: string, status: ClientStatus, version: number, probe: boolean): SyncView {
+export function useSyncStatus(
+  client: Client,
+  docId: string,
+  status: ClientStatus,
+  version: number,
+  probe: boolean,
+): SyncView {
   const [server, setServer] = useState<ServerView | null>(null);
   const [tick, setTick] = useState(0);
   const inflight = useRef(false);
@@ -67,11 +78,23 @@ export function useSyncStatus(client: Client, docId: string, status: ClientStatu
   }, [status.retryAt]);
   void tick;
 
-  const kind: SyncKind = status.offline ? "offline" : status.state === "live" ? "live" : status.retryAt !== null ? "reconnecting" : "connecting";
+  const kind: SyncKind = status.offline
+    ? "offline"
+    : status.state === "live"
+      ? "live"
+      : status.retryAt !== null
+        ? "reconnecting"
+        : "connecting";
   const localHash = client.hashHex();
-  const converged = quiet && server !== null && server.hash === localHash && server.durableSeq === status.lastSeq;
+  const converged =
+    quiet && server !== null && server.hash === localHash && server.durableSeq === status.lastSeq;
   return {
-    kind, status, server, converged, synced: quiet, localHash,
+    kind,
+    status,
+    server,
+    converged,
+    synced: quiet,
+    localHash,
     retryInMs: status.retryAt === null ? null : Math.max(0, status.retryAt - Date.now()),
   };
 }

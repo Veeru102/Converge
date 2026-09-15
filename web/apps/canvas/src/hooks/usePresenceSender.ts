@@ -17,14 +17,17 @@ export function usePresenceSender(client: Client, hz = 20) {
         return;
       }
       next = state;
-      timer ??= setTimeout(() => {
-        timer = null;
-        if (next) {
-          last = performance.now();
-          client.sendPresence(next);
-          next = null;
-        }
-      }, interval - (now - last));
+      timer ??= setTimeout(
+        () => {
+          timer = null;
+          if (next) {
+            last = performance.now();
+            client.sendPresence(next);
+            next = null;
+          }
+        },
+        interval - (now - last),
+      );
     };
   }, [client, hz]);
 }

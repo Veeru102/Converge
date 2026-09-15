@@ -23,15 +23,41 @@ export function Toolbar({ tool, setTool, hasSelection, onDuplicate, onDelete }: 
       {TOOLS.map((t) => {
         const Icon = Icons[t.icon];
         return (
-          <button key={t.id} className={`icon-btn${tool === t.id ? " active" : ""}`} title={`${t.label} (${t.key})`} aria-label={t.label} aria-pressed={tool === t.id} data-testid={`tool-${t.id}`} onClick={() => setTool(t.id)}>
+          <button
+            key={t.id}
+            className={`icon-btn${tool === t.id ? " active" : ""}`}
+            title={`${t.label} (${t.key})`}
+            aria-label={t.label}
+            aria-pressed={tool === t.id}
+            data-testid={`tool-${t.id}`}
+            onClick={() => setTool(t.id)}
+          >
             <Icon />
             <span className="kbd">{t.key}</span>
           </button>
         );
       })}
       <div className="sep" />
-      <button className="icon-btn" title="Duplicate (⌘D)" aria-label="Duplicate" disabled={!hasSelection} data-testid="duplicate" onClick={onDuplicate}><Icons.copy /></button>
-      <button className="icon-btn" title="Delete (⌫)" aria-label="Delete" disabled={!hasSelection} data-testid="delete" onClick={onDelete}><Icons.trash /></button>
+      <button
+        className="icon-btn"
+        title="Duplicate (⌘D)"
+        aria-label="Duplicate"
+        disabled={!hasSelection}
+        data-testid="duplicate"
+        onClick={onDuplicate}
+      >
+        <Icons.copy />
+      </button>
+      <button
+        className="icon-btn"
+        title="Delete (⌫)"
+        aria-label="Delete"
+        disabled={!hasSelection}
+        data-testid="delete"
+        onClick={onDelete}
+      >
+        <Icons.trash />
+      </button>
     </div>
   );
 }

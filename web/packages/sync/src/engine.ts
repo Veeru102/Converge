@@ -3,11 +3,27 @@
  * The Rust version is the reference; `fixtures/sync` traces pin this port to it.
  */
 import {
-  Document, HlcClock, HLC_MIN, compareHlc, decodeSnapshot, encodeSnapshot, hash, type Hlc, type Op, type OpId, type OpKind,
+  Document,
+  HlcClock,
+  HLC_MIN,
+  compareHlc,
+  decodeSnapshot,
+  encodeSnapshot,
+  hash,
+  type Hlc,
+  type Op,
+  type OpId,
+  type OpKind,
   type ReplicaId,
 } from "@converge/engine";
 import {
-  MAX_SUBMIT_OPS, PROTOCOL_VERSION, type CatchUp, type ClientMsg, type NackReason, type PresenceState, type ServerMsg,
+  MAX_SUBMIT_OPS,
+  PROTOCOL_VERSION,
+  type CatchUp,
+  type ClientMsg,
+  type NackReason,
+  type PresenceState,
+  type ServerMsg,
   type UserInfo,
 } from "@converge/protocol";
 
@@ -18,9 +34,7 @@ export interface Now {
 }
 
 export type Output =
-  | { type: "send"; msg: ClientMsg }
-  | { type: "persist"; op: Op }
-  | { type: "reconnect" };
+  { type: "send"; msg: ClientMsg } | { type: "persist"; op: Op } | { type: "reconnect" };
 
 export type ConnState = "disconnected" | "hello_sent" | "live";
 
@@ -51,7 +65,11 @@ export interface SyncConfig {
   ackTimeoutMs: number;
 }
 
-export const DEFAULT_SYNC_CONFIG: SyncConfig = { retimestampMarginMs: 30_000n, helloTimeoutMs: 5_000, ackTimeoutMs: 10_000 };
+export const DEFAULT_SYNC_CONFIG: SyncConfig = {
+  retimestampMarginMs: 30_000n,
+  helloTimeoutMs: 5_000,
+  ackTimeoutMs: 10_000,
+};
 
 function maxHlc(doc: Document): Hlc {
   let m = HLC_MIN;
@@ -105,7 +123,9 @@ export class SyncEngine {
       c.doc = decodeSnapshot(snapshot.bytes);
       c.lastSeq = snapshot.seq;
     }
-    const sorted = [...pending].sort((a, b) => (a.id.counter < b.id.counter ? -1 : a.id.counter > b.id.counter ? 1 : 0));
+    const sorted = [...pending].sort((a, b) =>
+      a.id.counter < b.id.counter ? -1 : a.id.counter > b.id.counter ? 1 : 0,
+    );
     for (const op of sorted) {
       if (op.id.replica !== replica) throw new Error("pending op from another replica");
       c.doc.apply(op);
@@ -144,14 +164,20 @@ export class SyncEngine {
     return this.sortedPending().map((p) => [p.op.id.counter, p.durable, p.sent, p.acked]);
   }
   replicaRow(): ReplicaRow {
-    return { nextCounter: this.nextCounter, highWater: this.clock.highWater(), clockOffsetMs: this.offsetMs };
+    return {
+      nextCounter: this.nextCounter,
+      highWater: this.clock.highWater(),
+      clockOffsetMs: this.offsetMs,
+    };
   }
   private serverNow(wallMs: bigint): bigint {
     const v = wallMs + this.offsetMs;
     return v < 0n ? 0n : v;
   }
   private sortedPending(): Pending[] {
-    return [...this.pending.values()].sort((a, b) => (a.op.id.counter < b.op.id.counter ? -1 : a.op.id.counter > b.op.id.counter ? 1 : 0));
+    return [...this.pending.values()].sort((a, b) =>
+      a.op.id.counter < b.op.id.counter ? -1 : a.op.id.counter > b.op.id.counter ? 1 : 0,
+    );
   }
 
   // ----- connection lifecycle -----
@@ -166,8 +192,12 @@ export class SyncEngine {
       msg: {
         type: "hello",
         hello: {
-          version: PROTOCOL_VERSION, doc: this.docId, replica: this.replica, lastSeq: this.lastSeq,
-          wantSnapshot: this.wantSnapshot, user: this.user,
+          version: PROTOCOL_VERSION,
+          doc: this.docId,
+          replica: this.replica,
+          lastSeq: this.lastSeq,
+          wantSnapshot: this.wantSnapshot,
+          user: this.user,
         },
       },
     });
@@ -191,7 +221,8 @@ export class SyncEngine {
       case "live": {
         let stale = false;
         for (const p of this.pending.values()) {
-          if (!p.acked && p.sentAt !== null && nowMs - p.sentAt >= this.cfg.ackTimeoutMs) stale = true;
+          if (!p.acked && p.sentAt !== null && nowMs - p.sentAt >= this.cfg.ackTimeoutMs)
+            stale = true;
         }
         if (stale) {
           this.state = "disconnected";
@@ -244,7 +275,9 @@ export class SyncEngine {
       bytes: encodeSnapshot(this.doc),
       seq: this.lastSeq,
       highWater: this.clock.highWater(),
-      acked: this.sortedPending().filter((p) => p.acked).map((p) => p.op.id.counter),
+      acked: this.sortedPending()
+        .filter((p) => p.acked)
+        .map((p) => p.op.id.counter),
     };
   }
 
@@ -312,7 +345,13 @@ export class SyncEngine {
     }
   }
 
-  private welcome(serverTimeMs: bigint, durableHead: bigint, catchUp: CatchUp, now: Now, out: Output[]): void {
+  private welcome(
+    serverTimeMs: bigint,
+    durableHead: bigint,
+    catchUp: CatchUp,
+    now: Now,
+    out: Output[],
+  ): void {
     this.offsetMs = serverTimeMs - now.wallMs;
     const serverNow = this.serverNow(now.wallMs);
     if (catchUp.kind === "ops") {
@@ -352,7 +391,8 @@ export class SyncEngine {
         break;
       }
     }
-    if (this.firstSkewNack !== null && firstUnsent !== null) return this.firstSkewNack < firstUnsent ? this.firstSkewNack : firstUnsent;
+    if (this.firstSkewNack !== null && firstUnsent !== null)
+      return this.firstSkewNack < firstUnsent ? this.firstSkewNack : firstUnsent;
     return this.firstSkewNack ?? firstUnsent;
   }
 
@@ -373,7 +413,8 @@ export class SyncEngine {
     const sn: Hlc = { wall: serverNow, logical: 0 };
     if (compareHlc(sn, floor) > 0) floor = sn;
     const sorted = this.sortedPending();
-    for (const p of sorted) if (p.op.id.counter < start && compareHlc(p.op.hlc, floor) > 0) floor = p.op.hlc;
+    for (const p of sorted)
+      if (p.op.id.counter < start && compareHlc(p.op.hlc, floor) > 0) floor = p.op.hlc;
     this.clock = new HlcClock(floor);
     for (const p of sorted) {
       if (p.op.id.counter < start) continue;
@@ -408,7 +449,8 @@ export class SyncEngine {
 
   private nack(counter: bigint, reason: NackReason, out: Output[]): void {
     if (reason === "clock_skew") {
-      this.firstSkewNack = this.firstSkewNack === null || counter < this.firstSkewNack ? counter : this.firstSkewNack;
+      this.firstSkewNack =
+        this.firstSkewNack === null || counter < this.firstSkewNack ? counter : this.firstSkewNack;
     } else {
       this.pending.delete(counter);
       this.wantSnapshot = true;

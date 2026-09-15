@@ -24,7 +24,13 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
           {ROWS.map(([what, keys]) => (
             <div key={what} style={{ display: "contents" }}>
               <span className="muted">{what}</span>
-              <span>{keys.split(" ").map((k, i) => (k === "/" || k === "·" ? <span key={i}> {k} </span> : <kbd key={i}>{k}</kbd>))}</span>
+              <span>
+                {keys
+                  .split(" ")
+                  .map((k, i) =>
+                    k === "/" || k === "·" ? <span key={i}> {k} </span> : <kbd key={i}>{k}</kbd>,
+                  )}
+              </span>
             </div>
           ))}
         </div>

@@ -1,11 +1,26 @@
 import { expect, test } from "@playwright/test";
-import { addRects, dragFirstShape, expectConverged, newDocId, objectCount, openTab, selectFirstShape, setChaos, status, waitLive } from "./helpers.js";
+import {
+  addRects,
+  dragFirstShape,
+  expectConverged,
+  newDocId,
+  objectCount,
+  openTab,
+  selectFirstShape,
+  setChaos,
+  status,
+  waitLive,
+} from "./helpers.js";
 
 test.afterEach(async ({ baseURL }) => {
   await setChaos(baseURL!, { enabled: false });
 });
 
-test("two tabs edit the same document live and converge with the server", async ({ browser, request, baseURL }) => {
+test("two tabs edit the same document live and converge with the server", async ({
+  browser,
+  request,
+  baseURL,
+}) => {
   const doc = await newDocId(request);
   const a = await openTab(browser, doc, "ann");
   const b = await openTab(browser, doc, "bob");
@@ -34,7 +49,11 @@ test("two tabs edit the same document live and converge with the server", async 
   await b.context.close();
 });
 
-test("offline edits are kept locally, survive a reload, and merge on reconnect", async ({ browser, request, baseURL }) => {
+test("offline edits are kept locally, survive a reload, and merge on reconnect", async ({
+  browser,
+  request,
+  baseURL,
+}) => {
   const doc = await newDocId(request);
   const a = await openTab(browser, doc, "ann");
   const b = await openTab(browser, doc, "bob");
@@ -73,11 +92,21 @@ test("offline edits are kept locally, survive a reload, and merge on reconnect",
   await b.context.close();
 });
 
-test("three tabs converge under server-side chaos (latency, drops, duplicates, disconnects)", async ({ browser, request, baseURL }) => {
+test("three tabs converge under server-side chaos (latency, drops, duplicates, disconnects)", async ({
+  browser,
+  request,
+  baseURL,
+}) => {
   const doc = await newDocId(request);
   const tabs = await Promise.all(["ann", "bob", "cy"].map((n) => openTab(browser, doc, n)));
   for (const t of tabs) await waitLive(t.page);
-  await setChaos(baseURL!, { enabled: true, latency_ms: [5, 120], drop_p: 0.15, dup_p: 0.15, disconnect_every: 20 });
+  await setChaos(baseURL!, {
+    enabled: true,
+    latency_ms: [5, 120],
+    drop_p: 0.15,
+    dup_p: 0.15,
+    disconnect_every: 20,
+  });
   for (let round = 0; round < 6; round++) {
     for (const [i, t] of tabs.entries()) {
       await addRects(t.page, 1, [120 + round * 120, 120 + i * 160]);
@@ -94,7 +123,11 @@ test("three tabs converge under server-side chaos (latency, drops, duplicates, d
   for (const t of tabs) await t.context.close();
 });
 
-test("a tab that reconnects after the server closed it resumes by sequence", async ({ browser, request, baseURL }) => {
+test("a tab that reconnects after the server closed it resumes by sequence", async ({
+  browser,
+  request,
+  baseURL,
+}) => {
   const doc = await newDocId(request);
   const a = await openTab(browser, doc, "ann");
   await waitLive(a.page);

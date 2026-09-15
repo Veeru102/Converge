@@ -41,7 +41,8 @@ function integerPart(key: string): string {
 
 function validateOrThrow(key: string): void {
   if (key === SMALLEST_INTEGER) throw new FracIndexError(`invalid order key ${key}`);
-  for (const c of key) if (DIGITS.indexOf(c) < 0) throw new FracIndexError(`invalid char in ${key}`);
+  for (const c of key)
+    if (DIGITS.indexOf(c) < 0) throw new FracIndexError(`invalid char in ${key}`);
   const i = integerPart(key);
   const f = key.slice(i.length);
   if (f.endsWith("0")) throw new FracIndexError(`invalid order key ${key}`);

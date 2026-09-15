@@ -6,7 +6,7 @@
 //! resume bookkeeping. It never touches a socket, a store or a clock: the
 //! driver feeds it events with `now_ms` (the raw local clock) and executes
 //! the [`Output`]s. Store durability is modelled explicitly so that the
-//! crash windows in `docs/IMPLEMENTATION_RISKS.md` §2 are reachable.
+//! crash windows in `docs/INVARIANTS.md` §2 are reachable.
 
 #![forbid(unsafe_code)]
 

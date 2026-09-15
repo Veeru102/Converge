@@ -43,7 +43,7 @@ impl Stamp {
 
 /// Per-replica HLC generator.
 ///
-/// Invariants (see `docs/IMPLEMENTATION_RISKS.md` H1, H7):
+/// Invariants (see `docs/INVARIANTS.md` H1, H7):
 /// * `tick` returns strictly increasing values, whatever the physical clock does
 ///   (it may stall or go backwards);
 /// * `wall_ms` never decreases;

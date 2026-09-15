@@ -27,58 +27,166 @@ class Writer {
     this.buf = nb;
     this.view = new DataView(nb.buffer);
   }
-  u8(v: number): void { this.ensure(1); this.view.setUint8(this.pos, v); this.pos += 1; }
-  u16(v: number): void { this.ensure(2); this.view.setUint16(this.pos, v, true); this.pos += 2; }
-  u32(v: number): void { this.ensure(4); this.view.setUint32(this.pos, v >>> 0, true); this.pos += 4; }
-  u64(v: bigint): void { this.ensure(8); this.view.setBigUint64(this.pos, BigInt.asUintN(64, v), true); this.pos += 8; }
-  i64(v: bigint): void { this.ensure(8); this.view.setBigInt64(this.pos, v, true); this.pos += 8; }
-  f64(v: number): void { this.ensure(8); this.view.setFloat64(this.pos, v, true); this.pos += 8; }
-  raw(b: Uint8Array): void { this.ensure(b.length); this.buf.set(b, this.pos); this.pos += b.length; }
-  bytes(b: Uint8Array): void { this.u32(b.length); this.raw(b); }
-  stamp(s: Stamp): void { this.u64(s.hlc.wall); this.u16(s.hlc.logical); this.u64(s.replica); }
+  u8(v: number): void {
+    this.ensure(1);
+    this.view.setUint8(this.pos, v);
+    this.pos += 1;
+  }
+  u16(v: number): void {
+    this.ensure(2);
+    this.view.setUint16(this.pos, v, true);
+    this.pos += 2;
+  }
+  u32(v: number): void {
+    this.ensure(4);
+    this.view.setUint32(this.pos, v >>> 0, true);
+    this.pos += 4;
+  }
+  u64(v: bigint): void {
+    this.ensure(8);
+    this.view.setBigUint64(this.pos, BigInt.asUintN(64, v), true);
+    this.pos += 8;
+  }
+  i64(v: bigint): void {
+    this.ensure(8);
+    this.view.setBigInt64(this.pos, v, true);
+    this.pos += 8;
+  }
+  f64(v: number): void {
+    this.ensure(8);
+    this.view.setFloat64(this.pos, v, true);
+    this.pos += 8;
+  }
+  raw(b: Uint8Array): void {
+    this.ensure(b.length);
+    this.buf.set(b, this.pos);
+    this.pos += b.length;
+  }
+  bytes(b: Uint8Array): void {
+    this.u32(b.length);
+    this.raw(b);
+  }
+  stamp(s: Stamp): void {
+    this.u64(s.hlc.wall);
+    this.u16(s.hlc.logical);
+    this.u64(s.replica);
+  }
   value(v: Value): void {
     this.u8(VALUE_TAG[v.t]);
     switch (v.t) {
-      case "null": break;
-      case "bool": this.u8(v.v ? 1 : 0); break;
-      case "i64": this.i64(v.v); break;
-      case "f64": this.f64(v.v); break;
-      case "str": case "frac": this.bytes(utf8.encode(v.v)); break;
-      case "color": this.u32(v.v); break;
-      case "ref": this.u64(v.v.replica); this.u64(v.v.counter); break;
+      case "null":
+        break;
+      case "bool":
+        this.u8(v.v ? 1 : 0);
+        break;
+      case "i64":
+        this.i64(v.v);
+        break;
+      case "f64":
+        this.f64(v.v);
+        break;
+      case "str":
+      case "frac":
+        this.bytes(utf8.encode(v.v));
+        break;
+      case "color":
+        this.u32(v.v);
+        break;
+      case "ref":
+        this.u64(v.v.replica);
+        this.u64(v.v.counter);
+        break;
     }
   }
-  finish(): Uint8Array { return this.buf.slice(0, this.pos); }
+  finish(): Uint8Array {
+    return this.buf.slice(0, this.pos);
+  }
 }
 
 class Reader {
   private view: DataView;
   pos = 0;
-  constructor(private readonly buf: Uint8Array, start: number) {
+  constructor(
+    private readonly buf: Uint8Array,
+    start: number,
+  ) {
     this.view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
     this.pos = start;
   }
-  private need(n: number): void { if (this.pos + n > this.buf.length) throw new Error("unexpected end of snapshot"); }
-  u8(): number { this.need(1); return this.view.getUint8(this.pos++); }
-  u16(): number { this.need(2); const v = this.view.getUint16(this.pos, true); this.pos += 2; return v; }
-  u32(): number { this.need(4); const v = this.view.getUint32(this.pos, true); this.pos += 4; return v; }
-  u64(): bigint { this.need(8); const v = this.view.getBigUint64(this.pos, true); this.pos += 8; return v; }
-  i64(): bigint { this.need(8); const v = this.view.getBigInt64(this.pos, true); this.pos += 8; return v; }
-  f64(): number { this.need(8); const v = this.view.getFloat64(this.pos, true); this.pos += 8; return v; }
-  string(): string { const n = this.u32(); this.need(n); const s = utf8d.decode(this.buf.subarray(this.pos, this.pos + n)); this.pos += n; return s; }
-  stamp(): Stamp { const wall = this.u64(); const logical = this.u16(); const replica = this.u64(); return { hlc: { wall, logical } satisfies Hlc, replica }; }
+  private need(n: number): void {
+    if (this.pos + n > this.buf.length) throw new Error("unexpected end of snapshot");
+  }
+  u8(): number {
+    this.need(1);
+    return this.view.getUint8(this.pos++);
+  }
+  u16(): number {
+    this.need(2);
+    const v = this.view.getUint16(this.pos, true);
+    this.pos += 2;
+    return v;
+  }
+  u32(): number {
+    this.need(4);
+    const v = this.view.getUint32(this.pos, true);
+    this.pos += 4;
+    return v;
+  }
+  u64(): bigint {
+    this.need(8);
+    const v = this.view.getBigUint64(this.pos, true);
+    this.pos += 8;
+    return v;
+  }
+  i64(): bigint {
+    this.need(8);
+    const v = this.view.getBigInt64(this.pos, true);
+    this.pos += 8;
+    return v;
+  }
+  f64(): number {
+    this.need(8);
+    const v = this.view.getFloat64(this.pos, true);
+    this.pos += 8;
+    return v;
+  }
+  string(): string {
+    const n = this.u32();
+    this.need(n);
+    const s = utf8d.decode(this.buf.subarray(this.pos, this.pos + n));
+    this.pos += n;
+    return s;
+  }
+  stamp(): Stamp {
+    const wall = this.u64();
+    const logical = this.u16();
+    const replica = this.u64();
+    return { hlc: { wall, logical } satisfies Hlc, replica };
+  }
   value(): Value {
     const tag = this.u8();
     switch (tag) {
-      case 0: return { t: "null" };
-      case 1: return { t: "bool", v: this.u8() !== 0 };
-      case 2: return { t: "i64", v: this.i64() };
-      case 3: return { t: "f64", v: this.f64() };
-      case 4: return { t: "str", v: this.string() };
-      case 5: return { t: "color", v: this.u32() };
-      case 6: return { t: "frac", v: this.string() };
-      case 7: { const r = this.u64(); const c = this.u64(); return { t: "ref", v: opId(r, c) }; }
-      default: throw new Error(`bad value tag ${tag}`);
+      case 0:
+        return { t: "null" };
+      case 1:
+        return { t: "bool", v: this.u8() !== 0 };
+      case 2:
+        return { t: "i64", v: this.i64() };
+      case 3:
+        return { t: "f64", v: this.f64() };
+      case 4:
+        return { t: "str", v: this.string() };
+      case 5:
+        return { t: "color", v: this.u32() };
+      case 6:
+        return { t: "frac", v: this.string() };
+      case 7: {
+        const r = this.u64();
+        const c = this.u64();
+        return { t: "ref", v: opId(r, c) };
+      }
+      default:
+        throw new Error(`bad value tag ${tag}`);
     }
   }
 }
@@ -135,7 +243,11 @@ export function encodeSnapshot(doc: Document): Uint8Array {
 }
 
 export function decodeSnapshot(bytes: Uint8Array): Document {
-  if (bytes.length < 5 || SNAPSHOT_MAGIC.some((b, i) => bytes[i] !== b) || bytes[4] !== SNAPSHOT_VERSION) {
+  if (
+    bytes.length < 5 ||
+    SNAPSHOT_MAGIC.some((b, i) => bytes[i] !== b) ||
+    bytes[4] !== SNAPSHOT_VERSION
+  ) {
     throw new Error("bad snapshot header");
   }
   const r = new Reader(bytes, 5);

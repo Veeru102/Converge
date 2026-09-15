@@ -24,7 +24,10 @@ export interface Codec {
 
 /** WebSocket transport using binary frames. */
 export class WebSocketTransport implements Transport {
-  constructor(private readonly url: string, private readonly codec: Codec) {}
+  constructor(
+    private readonly url: string,
+    private readonly codec: Codec,
+  ) {}
 
   connect(h: TransportHandlers): Connection {
     const ws = new WebSocket(this.url);

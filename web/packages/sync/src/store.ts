@@ -1,6 +1,6 @@
 /**
  * Durable local store. The IndexedDB implementation enforces the ordering
- * invariants from `docs/IMPLEMENTATION_RISKS.md` §2:
+ * invariants from `docs/INVARIANTS.md` §2:
  *
  * - D1  an op and its replica row (counter, HLC high-water) are written in
  *       one transaction, and the engine only transmits after it commits;
@@ -12,7 +12,16 @@
  *       adopts an unlocked slot before minting a new one.
  */
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import { hlcFromJson, hlcToJson, opFromJson, opToJson, type HlcJson, type Op, type OpJson, type ReplicaId } from "@converge/engine";
+import {
+  hlcFromJson,
+  hlcToJson,
+  opFromJson,
+  opToJson,
+  type HlcJson,
+  type Op,
+  type OpJson,
+  type ReplicaId,
+} from "@converge/engine";
 import type { ReplicaRow, SnapshotWrite } from "./engine.js";
 
 export interface ReplicaSlot {
@@ -101,10 +110,19 @@ interface Schema extends DBSchema {
 }
 
 function rowFromRecord(r: RowRecord): ReplicaRow {
-  return { nextCounter: BigInt(r.nextCounter), highWater: hlcFromJson(r.highWater), clockOffsetMs: BigInt(r.clockOffsetMs) };
+  return {
+    nextCounter: BigInt(r.nextCounter),
+    highWater: hlcFromJson(r.highWater),
+    clockOffsetMs: BigInt(r.clockOffsetMs),
+  };
 }
 function rowToRecord(replica: ReplicaId, row: ReplicaRow): RowRecord {
-  return { replica: replica.toString(), nextCounter: row.nextCounter.toString(), highWater: hlcToJson(row.highWater), clockOffsetMs: row.clockOffsetMs.toString() };
+  return {
+    replica: replica.toString(),
+    nextCounter: row.nextCounter.toString(),
+    highWater: hlcToJson(row.highWater),
+    clockOffsetMs: row.clockOffsetMs.toString(),
+  };
 }
 
 export class IndexedDbStore implements Store {
@@ -136,8 +154,13 @@ export class IndexedDbStore implements Store {
     const rows = await this.db.getAll("replicas");
     // Prefer slots with orphaned pending ops so they get flushed first.
     const pendingCount = new Map<string, number>();
-    for (const r of rows) pendingCount.set(r.replica, await this.db.countFromIndex("pending", "byReplica", r.replica));
-    rows.sort((a, b) => (pendingCount.get(b.replica)! - pendingCount.get(a.replica)!) || (a.replica < b.replica ? -1 : 1));
+    for (const r of rows)
+      pendingCount.set(r.replica, await this.db.countFromIndex("pending", "byReplica", r.replica));
+    rows.sort(
+      (a, b) =>
+        pendingCount.get(b.replica)! - pendingCount.get(a.replica)! ||
+        (a.replica < b.replica ? -1 : 1),
+    );
     for (const r of rows) {
       const replica = BigInt(r.replica);
       const release = await this.locks.tryAcquire(this.lockName(replica));
@@ -150,15 +173,26 @@ export class IndexedDbStore implements Store {
       if (rows.some((r) => r.replica === replica.toString())) continue;
       const release = await this.locks.tryAcquire(this.lockName(replica));
       if (!release) continue;
-      const row: ReplicaRow = { nextCounter: 1n, highWater: { wall: 0n, logical: 0 }, clockOffsetMs: 0n };
+      const row: ReplicaRow = {
+        nextCounter: 1n,
+        highWater: { wall: 0n, logical: 0 },
+        clockOffsetMs: 0n,
+      };
       await this.db.put("replicas", rowToRecord(replica, row));
       return { replica, ...(await this.load(replica, row)), release };
     }
   }
 
-  private async load(replica: ReplicaId, row: ReplicaRow): Promise<Omit<ReplicaSlot, "replica" | "release">> {
+  private async load(
+    replica: ReplicaId,
+    row: ReplicaRow,
+  ): Promise<Omit<ReplicaSlot, "replica" | "release">> {
     const snap = await this.db.get("snapshot", "doc");
-    const pendingRecords = await this.db.getAllFromIndex("pending", "byReplica", replica.toString());
+    const pendingRecords = await this.db.getAllFromIndex(
+      "pending",
+      "byReplica",
+      replica.toString(),
+    );
     pendingRecords.sort((a, b) => a.counter - b.counter);
     return {
       row,
@@ -170,7 +204,9 @@ export class IndexedDbStore implements Store {
   async appendPending(replica: ReplicaId, op: Op, row: ReplicaRow): Promise<void> {
     const tx = this.db.transaction(["pending", "replicas"], "readwrite");
     await Promise.all([
-      tx.objectStore("pending").put({ replica: replica.toString(), counter: Number(op.id.counter), op: opToJson(op) }),
+      tx
+        .objectStore("pending")
+        .put({ replica: replica.toString(), counter: Number(op.id.counter), op: opToJson(op) }),
       tx.objectStore("replicas").put(rowToRecord(replica, row)),
       tx.done,
     ]);
@@ -187,13 +223,19 @@ export class IndexedDbStore implements Store {
     }
     const rowStore = tx.objectStore("replicas");
     const rec = await rowStore.get(replica.toString());
-    const writes: Promise<unknown>[] = [snapStore.put({ key: "doc", seq: w.seq.toString(), bytes: w.bytes })];
-    for (const c of w.acked) writes.push(tx.objectStore("pending").delete([replica.toString(), Number(c)]));
+    const writes: Promise<unknown>[] = [
+      snapStore.put({ key: "doc", seq: w.seq.toString(), bytes: w.bytes }),
+    ];
+    for (const c of w.acked)
+      writes.push(tx.objectStore("pending").delete([replica.toString(), Number(c)]));
     if (rec) {
       const row = rowFromRecord(rec);
       const hw = row.highWater;
-      const newer = w.highWater.wall > hw.wall || (w.highWater.wall === hw.wall && w.highWater.logical > hw.logical);
-      if (newer) writes.push(rowStore.put(rowToRecord(replica, { ...row, highWater: w.highWater })));
+      const newer =
+        w.highWater.wall > hw.wall ||
+        (w.highWater.wall === hw.wall && w.highWater.logical > hw.logical);
+      if (newer)
+        writes.push(rowStore.put(rowToRecord(replica, { ...row, highWater: w.highWater })));
     }
     await Promise.all([...writes, tx.done]);
     return true;
@@ -213,7 +255,9 @@ export class MemoryStore implements Store {
 
   async acquireReplica(mint: () => ReplicaId): Promise<ReplicaSlot> {
     const entries = [...this.rows.entries()].sort(
-      (a, b) => (this.pending.get(b[0])?.size ?? 0) - (this.pending.get(a[0])?.size ?? 0) || (a[0] < b[0] ? -1 : 1),
+      (a, b) =>
+        (this.pending.get(b[0])?.size ?? 0) - (this.pending.get(a[0])?.size ?? 0) ||
+        (a[0] < b[0] ? -1 : 1),
     );
     for (const [key, row] of entries) {
       const release = await this.locks.tryAcquire(`mem:${key}`);
@@ -223,12 +267,18 @@ export class MemoryStore implements Store {
     }
     const replica = mint();
     const release = (await this.locks.tryAcquire(`mem:${replica}`))!;
-    const row: ReplicaRow = { nextCounter: 1n, highWater: { wall: 0n, logical: 0 }, clockOffsetMs: 0n };
+    const row: ReplicaRow = {
+      nextCounter: 1n,
+      highWater: { wall: 0n, logical: 0 },
+      clockOffsetMs: 0n,
+    };
     this.rows.set(replica.toString(), row);
     return { replica, row, snapshot: this.snapshot, pending: [], release };
   }
   private pendingOf(replica: ReplicaId): Op[] {
-    return [...(this.pending.get(replica.toString())?.values() ?? [])].sort((a, b) => (a.id.counter < b.id.counter ? -1 : 1));
+    return [...(this.pending.get(replica.toString())?.values() ?? [])].sort((a, b) =>
+      a.id.counter < b.id.counter ? -1 : 1,
+    );
   }
   async appendPending(replica: ReplicaId, op: Op, row: ReplicaRow): Promise<void> {
     const key = replica.toString();

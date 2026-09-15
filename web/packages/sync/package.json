@@ -15,10 +15,10 @@
   "dependencies": {
     "@converge/engine": "workspace:*",
     "@converge/protocol": "workspace:*",
-    "@noble/hashes": "^1.8.0",
     "idb": "^8.0.0"
   },
   "devDependencies": {
+    "@noble/hashes": "^1.8.0",
     "fake-indexeddb": "^6.2.5"
   }
 }

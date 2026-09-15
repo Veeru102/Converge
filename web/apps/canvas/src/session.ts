@@ -27,7 +27,12 @@ export async function startSession(): Promise<Session> {
   const transport = new WebSocketTransport(`${proto}://${location.host}/ws`, wireCodec);
   const debug = params.has("debug");
   const client = new Client({
-    docId, user: { name: userName, color }, store, transport, snapshotIdleMs: 1_000, snapshotEveryOps: 100,
+    docId,
+    user: { name: userName, color },
+    store,
+    transport,
+    snapshotIdleMs: 1_000,
+    snapshotEveryOps: 100,
     ...(debug ? { log: (l: string) => console.log(l) } : {}),
   });
   if (params.has("offline")) client.setOffline(true); // start without connecting (tests, demos)

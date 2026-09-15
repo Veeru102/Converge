@@ -1,12 +1,30 @@
 /** Every canvas edit is an ordinary op through `Client.edit`; nothing here is special-cased by the engine. */
-import { fracindex, idKey, type Document, type ObjectId, type ObjectKind, type ObjectState, type Value } from "@converge/engine";
+import {
+  fracindex,
+  idKey,
+  type Document,
+  type ObjectId,
+  type ObjectKind,
+  type ObjectState,
+  type Value,
+} from "@converge/engine";
 import type { Client } from "@converge/sync";
-import { boolV, bounds, colorV, f64, fracV, num, str, strV, type Box, type Entry } from "./model.js";
+import {
+  boolV,
+  bounds,
+  colorV,
+  f64,
+  fracV,
+  num,
+  str,
+  strV,
+  type Box,
+  type Entry,
+} from "./model.js";
 
 export type Tool = "select" | "rect" | "ellipse" | "line" | "text";
 
-export const DEFAULT_TEXT_SIZE = 18;
-export const DEFAULT_STROKE = 0x2b2b33;
+const DEFAULT_TEXT_SIZE = 18;
 
 export interface Style {
   fill: number;
@@ -21,20 +39,54 @@ function zAbove(doc: Document): string {
   return fracindex.between(top, null);
 }
 
-export function createShape(client: Client, kind: Exclude<Tool, "select">, box: Box, style: Style, textColor = 0x17171c): ObjectId {
+export function createShape(
+  client: Client,
+  kind: Exclude<Tool, "select">,
+  box: Box,
+  style: Style,
+  textColor = 0x17171c,
+): ObjectId {
   const doc = client.document;
   const z = fracV(zAbove(doc));
   let props: Array<[string, Value]>;
   switch (kind) {
     case "rect":
     case "ellipse":
-      props = [["x", f64(box.x)], ["y", f64(box.y)], ["w", f64(box.w)], ["h", f64(box.h)], ["fill", colorV(style.fill)], ["stroke", colorV(style.stroke)], ["stroke_width", f64(style.strokeWidth)], ["opacity", f64(style.opacity)], ["z", z]];
+      props = [
+        ["x", f64(box.x)],
+        ["y", f64(box.y)],
+        ["w", f64(box.w)],
+        ["h", f64(box.h)],
+        ["fill", colorV(style.fill)],
+        ["stroke", colorV(style.stroke)],
+        ["stroke_width", f64(style.strokeWidth)],
+        ["opacity", f64(style.opacity)],
+        ["z", z],
+      ];
       break;
     case "line":
-      props = [["x1", f64(box.x)], ["y1", f64(box.y)], ["x2", f64(box.x + box.w)], ["y2", f64(box.y + box.h)], ["stroke", colorV(style.stroke)], ["stroke_width", f64(Math.max(2, style.strokeWidth))], ["arrow", boolV(true)], ["opacity", f64(style.opacity)], ["z", z]];
+      props = [
+        ["x1", f64(box.x)],
+        ["y1", f64(box.y)],
+        ["x2", f64(box.x + box.w)],
+        ["y2", f64(box.y + box.h)],
+        ["stroke", colorV(style.stroke)],
+        ["stroke_width", f64(Math.max(2, style.strokeWidth))],
+        ["arrow", boolV(true)],
+        ["opacity", f64(style.opacity)],
+        ["z", z],
+      ];
       break;
     case "text":
-      props = [["x", f64(box.x)], ["y", f64(box.y)], ["text", strV("")], ["size", f64(DEFAULT_TEXT_SIZE)], ["color", colorV(textColor)], ["opacity", f64(style.opacity)], ["z", z]];
+      props = [
+        ["x", f64(box.x)],
+        ["y", f64(box.y)],
+        ["text", strV("")],
+        ["size", f64(DEFAULT_TEXT_SIZE)],
+        ["color", colorV(textColor)],
+        ["opacity", f64(style.opacity)],
+        ["z", z],
+      ];
       break;
   }
   return client.edit({ op: "create", kind: kind as ObjectKind, props }).id;
@@ -43,36 +95,102 @@ export function createShape(client: Client, kind: Exclude<Tool, "select">, box: 
 export function setGeometry(client: Client, id: ObjectId, o: ObjectState, box: Box): void {
   if (o.kind === "line") {
     // Keep the line's direction; the box is the normalised extent.
-    const flipX = num(o, "x1") > num(o, "x2"), flipY = num(o, "y1") > num(o, "y2");
-    const x1 = flipX ? box.x + box.w : box.x, x2 = flipX ? box.x : box.x + box.w;
-    const y1 = flipY ? box.y + box.h : box.y, y2 = flipY ? box.y : box.y + box.h;
-    client.edit({ op: "set_props", object: id, entries: [["x1", f64(x1)], ["y1", f64(y1)], ["x2", f64(x2)], ["y2", f64(y2)]] });
+    const flipX = num(o, "x1") > num(o, "x2"),
+      flipY = num(o, "y1") > num(o, "y2");
+    const x1 = flipX ? box.x + box.w : box.x,
+      x2 = flipX ? box.x : box.x + box.w;
+    const y1 = flipY ? box.y + box.h : box.y,
+      y2 = flipY ? box.y : box.y + box.h;
+    client.edit({
+      op: "set_props",
+      object: id,
+      entries: [
+        ["x1", f64(x1)],
+        ["y1", f64(y1)],
+        ["x2", f64(x2)],
+        ["y2", f64(y2)],
+      ],
+    });
   } else if (o.kind === "text") {
-    client.edit({ op: "set_props", object: id, entries: [["x", f64(box.x)], ["y", f64(box.y)], ["w", f64(box.w)]] });
+    client.edit({
+      op: "set_props",
+      object: id,
+      entries: [
+        ["x", f64(box.x)],
+        ["y", f64(box.y)],
+        ["w", f64(box.w)],
+      ],
+    });
   } else {
-    client.edit({ op: "set_props", object: id, entries: [["x", f64(box.x)], ["y", f64(box.y)], ["w", f64(box.w)], ["h", f64(box.h)]] });
+    client.edit({
+      op: "set_props",
+      object: id,
+      entries: [
+        ["x", f64(box.x)],
+        ["y", f64(box.y)],
+        ["w", f64(box.w)],
+        ["h", f64(box.h)],
+      ],
+    });
   }
 }
 
 export function setLineEnd(client: Client, id: ObjectId, which: 1 | 2, x: number, y: number): void {
-  client.edit({ op: "set_props", object: id, entries: [[`x${which}`, f64(x)], [`y${which}`, f64(y)]] });
+  client.edit({
+    op: "set_props",
+    object: id,
+    entries: [
+      [`x${which}`, f64(x)],
+      [`y${which}`, f64(y)],
+    ],
+  });
 }
 
 /** Move a set of objects by a delta from their positions in `origin`. */
-export function moveTo(client: Client, items: Array<{ id: ObjectId; o: ObjectState; origin: Box }>, dx: number, dy: number): void {
+export function moveTo(
+  client: Client,
+  items: Array<{ id: ObjectId; o: ObjectState; origin: Box }>,
+  dx: number,
+  dy: number,
+): void {
   for (const { id, o, origin } of items) {
     if (o.kind === "line") {
-      const ox1 = num(o, "x1"), oy1 = num(o, "y1"), ox2 = num(o, "x2"), oy2 = num(o, "y2");
-      const sx = origin.x - Math.min(ox1, ox2), sy = origin.y - Math.min(oy1, oy2);
-      client.edit({ op: "set_props", object: id, entries: [["x1", f64(ox1 + sx + dx)], ["y1", f64(oy1 + sy + dy)], ["x2", f64(ox2 + sx + dx)], ["y2", f64(oy2 + sy + dy)]] });
+      const ox1 = num(o, "x1"),
+        oy1 = num(o, "y1"),
+        ox2 = num(o, "x2"),
+        oy2 = num(o, "y2");
+      const sx = origin.x - Math.min(ox1, ox2),
+        sy = origin.y - Math.min(oy1, oy2);
+      client.edit({
+        op: "set_props",
+        object: id,
+        entries: [
+          ["x1", f64(ox1 + sx + dx)],
+          ["y1", f64(oy1 + sy + dy)],
+          ["x2", f64(ox2 + sx + dx)],
+          ["y2", f64(oy2 + sy + dy)],
+        ],
+      });
     } else {
-      client.edit({ op: "set_props", object: id, entries: [["x", f64(origin.x + dx)], ["y", f64(origin.y + dy)]] });
+      client.edit({
+        op: "set_props",
+        object: id,
+        entries: [
+          ["x", f64(origin.x + dx)],
+          ["y", f64(origin.y + dy)],
+        ],
+      });
     }
   }
 }
 
 export function nudge(client: Client, entries: Entry[], dx: number, dy: number): void {
-  moveTo(client, entries.map(([id, o]) => ({ id, o, origin: bounds(o) })), dx, dy);
+  moveTo(
+    client,
+    entries.map(([id, o]) => ({ id, o, origin: bounds(o) })),
+    dx,
+    dy,
+  );
 }
 
 export function setProps(client: Client, ids: ObjectId[], entries: Array<[string, Value]>): void {

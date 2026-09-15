@@ -37,7 +37,12 @@ export function TextEditor({ o, onInput, onDone }: Props) {
         defaultValue={initial.current}
         rows={lines}
         spellCheck={false}
-        style={{ fontSize: size, color: hexOf(color(o, "color"), "#17171c"), width: w + 4, height: h + 4 }}
+        style={{
+          fontSize: size,
+          color: hexOf(color(o, "color"), "#17171c"),
+          width: w + 4,
+          height: h + 4,
+        }}
         onInput={(e) => onInput((e.target as HTMLTextAreaElement).value)}
         onBlur={onDone}
         onKeyDown={(e) => {

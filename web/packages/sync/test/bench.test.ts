@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 import { BenchStats, type ClientEvent, type ClientStatus } from "../src/index.js";
 
 const id = (c: number) => ({ replica: 7n, counter: BigInt(c) });
-const status = (over: Partial<ClientStatus>): ClientStatus => ({ state: "live", replica: 7n, lastSeq: 0n, pending: 0, unacked: 0, unsaved: 0, offline: false, retryAt: null, ...over });
+const status = (over: Partial<ClientStatus>): ClientStatus => ({
+  state: "live",
+  replica: 7n,
+  lastSeq: 0n,
+  pending: 0,
+  unacked: 0,
+  unsaved: 0,
+  offline: false,
+  retryAt: null,
+  ...over,
+});
 
 describe("BenchStats", () => {
   it("measures submit → own commit latency from the first transmission", () => {

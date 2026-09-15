@@ -40,7 +40,13 @@ export type CatchUp =
   | { kind: "snapshot"; bytes: Uint8Array; seq: bigint };
 
 export type ByeReason =
-  | "version_mismatch" | "unknown_doc" | "superseded" | "clock_skew" | "slow_consumer" | "restart" | "protocol_error";
+  | "version_mismatch"
+  | "unknown_doc"
+  | "superseded"
+  | "clock_skew"
+  | "slow_consumer"
+  | "restart"
+  | "protocol_error";
 
 export type NackReason = "clock_skew" | "malformed" | "rejected";
 
@@ -49,7 +55,14 @@ export function nackIsPermanent(r: NackReason): boolean {
 }
 
 export type ServerMsg =
-  | { type: "welcome"; session: bigint; serverTimeMs: bigint; durableHeadSeq: bigint; catchUp: CatchUp; presence: PresenceEntry[] }
+  | {
+      type: "welcome";
+      session: bigint;
+      serverTimeMs: bigint;
+      durableHeadSeq: bigint;
+      catchUp: CatchUp;
+      presence: PresenceEntry[];
+    }
   | { type: "bye"; reason: ByeReason }
   | { type: "commit"; seq: bigint; op: Op }
   | { type: "ack"; opId: OpId; seq: bigint | null }

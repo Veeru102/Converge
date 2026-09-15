@@ -25,7 +25,8 @@ export interface BenchSnapshot {
   commits: number;
 }
 
-const quantile = (sorted: number[], q: number): number => (sorted.length ? sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)]! : 0);
+const quantile = (sorted: number[], q: number): number =>
+  sorted.length ? sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)]! : 0;
 
 class Samples {
   private v: number[] = [];
@@ -36,7 +37,13 @@ class Samples {
   }
   quantiles(): Quantiles {
     const s = [...this.v].sort((a, b) => a - b);
-    return { n: s.length, p50: quantile(s, 0.5), p95: quantile(s, 0.95), max: s.length ? s[s.length - 1]! : 0, last: this.v.length ? this.v[this.v.length - 1]! : null };
+    return {
+      n: s.length,
+      p50: quantile(s, 0.5),
+      p95: quantile(s, 0.95),
+      max: s.length ? s[s.length - 1]! : 0,
+      last: this.v.length ? this.v[this.v.length - 1]! : null,
+    };
   }
   get values(): readonly number[] {
     return this.v;

@@ -19,7 +19,7 @@ export function useKeyboard(handlers: KeyHandlers, enabled = true): void {
       if (e.metaKey || e.ctrlKey) parts.push("mod");
       if (e.shiftKey) parts.push("shift");
       if (e.altKey) parts.push("alt");
-      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();
+      const key = e.key.toLowerCase();
       const combo = [...parts, key].join("+");
       const h = handlers[combo] ?? (key === "?" ? handlers["?"] : undefined);
       if (h) {

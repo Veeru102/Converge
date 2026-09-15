@@ -5,7 +5,14 @@
  */
 import { Document, hex, type Op, type OpId, type OpKind, type ReplicaId } from "@converge/engine";
 import type { PresenceEntry, PresenceState, ServerMsg, UserInfo } from "@converge/protocol";
-import { DEFAULT_SYNC_CONFIG, SyncEngine, type ConnState, type Now, type Output, type SyncConfig } from "./engine.js";
+import {
+  DEFAULT_SYNC_CONFIG,
+  SyncEngine,
+  type ConnState,
+  type Now,
+  type Output,
+  type SyncConfig,
+} from "./engine.js";
 import type { ReplicaSlot, Store } from "./store.js";
 import type { Connection, Transport } from "./transport.js";
 
@@ -16,7 +23,10 @@ export interface Clock {
 
 export const systemClock: Clock = {
   wallMs: () => BigInt(Date.now()),
-  monoMs: () => (typeof performance !== "undefined" ? performance.now() : Number(process.hrtime.bigint() / 1_000_000n)),
+  monoMs: () =>
+    typeof performance !== "undefined"
+      ? performance.now()
+      : Number(process.hrtime.bigint() / 1_000_000n),
 };
 
 export interface ClientOptions {
@@ -31,7 +41,7 @@ export interface ClientOptions {
   snapshotIdleMs?: number;
   reconnectBackoffMs?: [number, number];
   mintReplica?: () => ReplicaId;
-  /** Test hook: called with the timer id when the client schedules work. */
+  /** Timer functions, injectable for tests. */
   setTimeout?: typeof setTimeout;
   clearTimeout?: typeof clearTimeout;
   /** Diagnostic log sink (connection lifecycle, outputs). */
@@ -76,6 +86,7 @@ export class Client {
   private slot!: ReplicaSlot;
   private conn: Connection | null = null;
   private gen = 0;
+  private engineGen = 0;
   private queue: Promise<void> = Promise.resolve();
   private stopped = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,7 +114,8 @@ export class Client {
     this.cfg = opts.config ?? DEFAULT_SYNC_CONFIG;
     // Never store the globals bare: calling them as methods of this object
     // throws "Illegal invocation" in browsers.
-    this.setTimer = opts.setTimeout ?? ((fn: () => void, ms?: number) => globalThis.setTimeout(fn, ms));
+    this.setTimer =
+      opts.setTimeout ?? ((fn: () => void, ms?: number) => globalThis.setTimeout(fn, ms));
     this.clearTimer = opts.clearTimeout ?? ((t) => globalThis.clearTimeout(t));
   }
 
@@ -113,7 +125,13 @@ export class Client {
   async start(): Promise<void> {
     this.slot = await this.opts.store.acquireReplica(this.opts.mintReplica ?? randomReplicaId);
     this.engine = SyncEngine.restore(
-      this.opts.docId, this.slot.replica, this.opts.user, this.cfg, this.slot.row, this.slot.snapshot, this.slot.pending,
+      this.opts.docId,
+      this.slot.replica,
+      this.opts.user,
+      this.cfg,
+      this.slot.row,
+      this.slot.snapshot,
+      this.slot.pending,
     );
     this.emitChange();
     this.connect();
@@ -121,7 +139,8 @@ export class Client {
 
   async stop(): Promise<void> {
     this.stopped = true;
-    for (const t of [this.reconnectTimer, this.tickTimer, this.snapshotTimer]) if (t) this.clearTimer(t);
+    for (const t of [this.reconnectTimer, this.tickTimer, this.snapshotTimer])
+      if (t) this.clearTimer(t);
     this.conn?.close();
     this.conn = null;
     await this.flush();
@@ -139,7 +158,8 @@ export class Client {
    */
   simulateCrash(): void {
     this.stopped = true;
-    for (const t of [this.reconnectTimer, this.tickTimer, this.snapshotTimer]) if (t) this.clearTimer(t);
+    for (const t of [this.reconnectTimer, this.tickTimer, this.snapshotTimer])
+      if (t) this.clearTimer(t);
     const c = this.conn;
     this.conn = null;
     c?.close();
@@ -159,9 +179,14 @@ export class Client {
   }
   status(): ClientStatus {
     return {
-      state: this.engine.connState, replica: this.engine.replica, lastSeq: this.engine.lastSeqValue,
-      pending: this.engine.pendingCount, unacked: this.engine.unackedCount(), unsaved: this.unsaved,
-      offline: this.offline, retryAt: this.retryAt,
+      state: this.engine.connState,
+      replica: this.engine.replica,
+      lastSeq: this.engine.lastSeqValue,
+      pending: this.engine.pendingCount,
+      unacked: this.engine.unackedCount(),
+      unsaved: this.unsaved,
+      offline: this.offline,
+      retryAt: this.retryAt,
     };
   }
   onEvent(l: Listener<ClientEvent>): () => void {
@@ -254,7 +279,9 @@ export class Client {
   }
 
   private enqueue(fn: () => Promise<void> | void): Promise<void> {
-    this.queue = this.queue.then(fn, fn).catch((e) => console.error("[converge] queued work failed", e));
+    this.queue = this.queue
+      .then(fn, fn)
+      .catch((e) => console.error("[converge] queued work failed", e));
     return this.queue;
   }
 
@@ -264,37 +291,40 @@ export class Client {
 
   private connect(): void {
     if (this.stopped || this.conn || this.offline) {
-      this.log(`connect skipped (stopped=${this.stopped} conn=${!!this.conn} offline=${this.offline})`);
+      this.log(
+        `connect skipped (stopped=${this.stopped} conn=${!!this.conn} offline=${this.offline})`,
+      );
       return;
     }
     const gen = ++this.gen;
     this.retryAt = null;
     this.log(`connecting gen=${gen}`);
     const conn = this.opts.transport.connect({
-      onOpen: () => this.enqueue(() => {
-        if (this.gen !== gen || this.conn !== conn) return;
-        this.log(`open gen=${gen}`);
-        const out: Output[] = [];
-        this.engineGen = this.engine.connected(this.now(), out);
-        this.handle(out);
-        this.armTick();
-        this.emitStatus();
-      }),
-      onMessage: (msg) => this.enqueue(() => {
-        if (this.gen !== gen || this.conn !== conn) return;
-        this.onServerMessage(msg);
-      }),
-      onClose: () => this.enqueue(() => {
-        this.log(`close gen=${gen} current=${this.conn === conn}`);
-        if (this.conn !== conn) return;
-        this.conn = null;
-        this.lostConnection();
-      }),
+      onOpen: () =>
+        this.enqueue(() => {
+          if (this.gen !== gen || this.conn !== conn) return;
+          this.log(`open gen=${gen}`);
+          const out: Output[] = [];
+          this.engineGen = this.engine.connected(this.now(), out);
+          this.handle(out);
+          this.armTick();
+          this.emitStatus();
+        }),
+      onMessage: (msg) =>
+        this.enqueue(() => {
+          if (this.gen !== gen || this.conn !== conn) return;
+          this.onServerMessage(msg);
+        }),
+      onClose: () =>
+        this.enqueue(() => {
+          this.log(`close gen=${gen} current=${this.conn === conn}`);
+          if (this.conn !== conn) return;
+          this.conn = null;
+          this.lostConnection();
+        }),
     });
     this.conn = conn;
   }
-
-  private engineGen = 0;
 
   private lostConnection(): void {
     this.engine.disconnected();
@@ -303,7 +333,9 @@ export class Client {
     const [lo, hi] = this.opts.reconnectBackoffMs ?? [500, 30_000];
     const delay = Math.min(hi, lo * 2 ** this.backoffAttempt) * (0.5 + Math.random() * 0.5);
     this.backoffAttempt = Math.min(this.backoffAttempt + 1, 10);
-    this.log(`lost connection; reconnect in ${Math.round(delay)} ms (attempt ${this.backoffAttempt})`);
+    this.log(
+      `lost connection; reconnect in ${Math.round(delay)} ms (attempt ${this.backoffAttempt})`,
+    );
     if (this.reconnectTimer) this.clearTimer(this.reconnectTimer);
     this.retryAt = Date.now() + delay;
     this.emitStatus();
@@ -317,7 +349,9 @@ export class Client {
   private onServerMessage(msg: ServerMsg): void {
     const out: Output[] = [];
     const before = this.engine.lastSeqValue;
-    this.log(`recv ${msg.type}${msg.type === "commit" ? ` seq=${msg.seq}` : msg.type === "bye" || msg.type === "nack" ? ` ${msg.reason}` : ""}`);
+    this.log(
+      `recv ${msg.type}${msg.type === "commit" ? ` seq=${msg.seq}` : msg.type === "bye" || msg.type === "nack" ? ` ${msg.reason}` : ""}`,
+    );
     this.engine.message(this.engineGen, msg, this.now(), out);
     switch (msg.type) {
       case "welcome":
@@ -325,7 +359,14 @@ export class Client {
         if (this.eventListeners.length) {
           const at = performance.now();
           if (msg.catchUp.kind === "ops") {
-            for (const { seq, op } of msg.catchUp.ops) this.event({ type: "commit", opId: op.id, seq, own: op.id.replica === this.engine.replica, at });
+            for (const { seq, op } of msg.catchUp.ops)
+              this.event({
+                type: "commit",
+                opId: op.id,
+                seq,
+                own: op.id.replica === this.engine.replica,
+                at,
+              });
           }
           this.event({ type: "welcome", at, unacked: this.engine.unackedCount() });
         }
@@ -336,11 +377,19 @@ export class Client {
         break;
       case "commit":
         this.opsSinceSnapshot++;
-        if (this.eventListeners.length) this.event({ type: "commit", opId: msg.op.id, seq: msg.seq, own: msg.op.id.replica === this.engine.replica, at: performance.now() });
+        if (this.eventListeners.length)
+          this.event({
+            type: "commit",
+            opId: msg.op.id,
+            seq: msg.seq,
+            own: msg.op.id.replica === this.engine.replica,
+            at: performance.now(),
+          });
         this.emitChange();
         break;
       case "ack":
-        if (this.eventListeners.length) this.event({ type: "ack", opId: msg.opId, at: performance.now() });
+        if (this.eventListeners.length)
+          this.event({ type: "ack", opId: msg.opId, at: performance.now() });
         break;
       case "presence_update":
         this.presenceTable.set(msg.entry.replica.toString(), msg.entry);
@@ -353,7 +402,8 @@ export class Client {
       default:
         break;
     }
-    if (this.engine.lastSeqValue !== before || msg.type === "ack" || msg.type === "nack") this.emitStatus();
+    if (this.engine.lastSeqValue !== before || msg.type === "ack" || msg.type === "nack")
+      this.emitStatus();
     this.handle(out);
     this.armTick();
     this.scheduleSnapshot();
@@ -363,8 +413,15 @@ export class Client {
     for (const o of out) {
       switch (o.type) {
         case "send":
-          this.log(`send ${o.msg.type}${o.msg.type === "submit" ? ` x${o.msg.ops.length}` : ""} conn=${!!this.conn}`);
-          if (o.msg.type === "submit" && this.eventListeners.length) this.event({ type: "submit", opIds: o.msg.ops.map((op) => op.id), at: performance.now() });
+          this.log(
+            `send ${o.msg.type}${o.msg.type === "submit" ? ` x${o.msg.ops.length}` : ""} conn=${!!this.conn}`,
+          );
+          if (o.msg.type === "submit" && this.eventListeners.length)
+            this.event({
+              type: "submit",
+              opIds: o.msg.ops.map((op) => op.id),
+              at: performance.now(),
+            });
           this.conn?.send(o.msg);
           break;
         case "persist": {
@@ -373,7 +430,11 @@ export class Client {
           this.emitStatus();
           void this.enqueue(async () => {
             try {
-              await this.opts.store.appendPending(this.engine.replica, op, this.engine.replicaRow());
+              await this.opts.store.appendPending(
+                this.engine.replica,
+                op,
+                this.engine.replicaRow(),
+              );
             } catch (e) {
               // D1: never transmit an op the store did not accept.
               console.error("[converge] local write failed; op stays unsaved", e);
@@ -463,7 +524,8 @@ export class Client {
     const s = this.status();
     if (this.eventListeners.length) {
       const at = performance.now();
-      if (s.state !== this.lastState) this.event({ type: "state", from: this.lastState, to: s.state, at });
+      if (s.state !== this.lastState)
+        this.event({ type: "state", from: this.lastState, to: s.state, at });
       this.event({ type: "status", status: s, at });
     }
     this.lastState = s.state;
